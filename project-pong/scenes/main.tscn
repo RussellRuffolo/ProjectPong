@@ -1,4 +1,4 @@
-[gd_scene load_steps=28 format=3 uid="uid://bq1hqkibx0cax"]
+[gd_scene load_steps=29 format=3 uid="uid://bq1hqkibx0cax"]
 
 [ext_resource type="Script" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
 [ext_resource type="Script" path="res://scripts/hand_grabber.gd" id="2_handgrab"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/single_player_game.gd" id="4_game"]
 [ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="5_cup_visual"]
 [ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="6_cup_collision"]
+[ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="7_surface"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.46, 0.5, 0.55, 1)
@@ -140,6 +141,12 @@ shape = SubResource("SphereShape_GrabArea")
 
 [node name="BounceFloor" type="StaticBody3D" parent="PhysicsSurfaces"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1)
+script = ExtResource("7_surface")
+surface_id = &"floor"
+bounce = 0.5
+friction = 0.82
+absorbs_ball_bounce = true
+rough = true
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/BounceFloor"]
 mesh = SubResource("BoxMesh_Floor")
@@ -150,6 +157,10 @@ shape = SubResource("BoxShape_Floor")
 
 [node name="BounceTable" type="StaticBody3D" parent="PhysicsSurfaces"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -1.35)
+script = ExtResource("7_surface")
+surface_id = &"table"
+bounce = 0.08
+friction = 0.28
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/BounceTable"]
 mesh = SubResource("BoxMesh_Table")
