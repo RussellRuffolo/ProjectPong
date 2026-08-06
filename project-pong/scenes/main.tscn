@@ -1,8 +1,7 @@
-[gd_scene load_steps=11 format=3 uid="uid://bq1hqkibx0cax"]
+[gd_scene load_steps=17 format=3 uid="uid://bq1hqkibx0cax"]
 
 [ext_resource type="Script" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
-[ext_resource type="Script" path="res://scripts/meta_platform_bootstrap.gd" id="2_meta_platform"]
-[ext_resource type="Script" path="res://scripts/avatar_bootstrap.gd" id="3_avatar_boot"]
+[ext_resource type="Script" path="res://scripts/hand_grabber.gd" id="2_handgrab"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.46, 0.5, 0.55, 1)
@@ -26,18 +25,40 @@ roughness = 0.8
 albedo_color = Color(0.08, 0.25, 0.95, 1)
 roughness = 0.8
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_LeftHand"]
+albedo_color = Color(0.2, 0.85, 1, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_RightHand"]
+albedo_color = Color(1, 0.42, 0.28, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_PingPongBall"]
+albedo_color = Color(1, 0.96, 0.82, 1)
+roughness = 0.72
+
 [sub_resource type="BoxMesh" id="BoxMesh_XAxis"]
 size = Vector3(1, 0.02, 0.02)
 
 [sub_resource type="BoxMesh" id="BoxMesh_ZAxis"]
 size = Vector3(0.02, 0.02, 1)
 
+[sub_resource type="SphereMesh" id="SphereMesh_HandMarker"]
+radius = 0.035
+height = 0.07
+
+[sub_resource type="SphereMesh" id="SphereMesh_PingPongBall"]
+radius = 0.02
+height = 0.04
+
+[sub_resource type="SphereShape3D" id="SphereShape_GrabArea"]
+radius = 0.09
+
+[sub_resource type="SphereShape3D" id="SphereShape_PingPongBall"]
+radius = 0.02
+
 [node name="Main" type="Node3D"]
 script = ExtResource("1_xrboot")
-
-[node name="MetaPlatformBootstrap" type="Node" parent="."]
-unique_name_in_owner = true
-script = ExtResource("2_meta_platform")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_1")
@@ -56,14 +77,48 @@ current = true
 [node name="LeftController" type="XRController3D" parent="XROrigin3D"]
 unique_name_in_owner = true
 tracker = &"left_hand"
+script = ExtResource("2_handgrab")
+hand_name = "Left hand"
+
+[node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/LeftController"]
+mesh = SubResource("SphereMesh_HandMarker")
+material_override = SubResource("StandardMaterial3D_LeftHand")
+
+[node name="GrabArea" type="Area3D" parent="XROrigin3D/LeftController"]
+collision_layer = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="XROrigin3D/LeftController/GrabArea"]
+shape = SubResource("SphereShape_GrabArea")
 
 [node name="RightController" type="XRController3D" parent="XROrigin3D"]
 unique_name_in_owner = true
 tracker = &"right_hand"
+script = ExtResource("2_handgrab")
+hand_name = "Right hand"
 
-[node name="AvatarRoot" type="Node3D" parent="XROrigin3D"]
-unique_name_in_owner = true
-script = ExtResource("3_avatar_boot")
+[node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/RightController"]
+mesh = SubResource("SphereMesh_HandMarker")
+material_override = SubResource("StandardMaterial3D_RightHand")
+
+[node name="GrabArea" type="Area3D" parent="XROrigin3D/RightController"]
+collision_layer = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="XROrigin3D/RightController/GrabArea"]
+shape = SubResource("SphereShape_GrabArea")
+
+[node name="Grabbables" type="Node3D" parent="."]
+
+[node name="TestPingPongBall" type="RigidBody3D" parent="Grabbables" groups=["grabbable"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, -0.55)
+mass = 0.0027
+gravity_scale = 0.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Grabbables/TestPingPongBall"]
+mesh = SubResource("SphereMesh_PingPongBall")
+material_override = SubResource("StandardMaterial3D_PingPongBall")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Grabbables/TestPingPongBall"]
+shape = SubResource("SphereShape_PingPongBall")
 
 [node name="OriginHelpers" type="Node3D" parent="."]
 
