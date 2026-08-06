@@ -2,7 +2,9 @@
 
 ## Project Goal
 
-Build a prototype Godot project for Meta Quest 2 and Meta Quest 3. The current playable milestone is intentionally small: when launched on a headset, the user loads into an otherwise empty immersive VR scene with working head tracking.
+Build toward a paid VR "beer pong" style multiplayer game for release on the Meta Quest store. The long-term product should support online multiplayer, stylized arenas, arena-specific "House Rules", responsive VR interactions, and visual effects that make each venue feel distinct.
+
+The current playable milestone is intentionally small: when launched on a headset, the user loads into an otherwise empty immersive VR scene with working head tracking.
 
 Prioritize a real on-device Quest experience over desktop-only simulation. Editor previews are useful, but they are not a substitute for testing on hardware.
 
@@ -12,21 +14,36 @@ Prioritize a real on-device Quest experience over desktop-only simulation. Edito
 - XR runtime: OpenXR.
 - Devices: Meta Quest 2 and Meta Quest 3.
 - Platform: Android export for Quest.
+- Planned networking layer: Photon.
 
 If a dependency, SDK, or plugin version is not yet present in the repo, document the expected version and setup steps before wiring code against it.
 
+## Product Direction
+
+- Design the codebase for a commercial Quest release, with attention to performance, comfort, store-readiness, deterministic behavior, and maintainable content pipelines.
+- Treat multiplayer as a core architectural constraint, even before networking is implemented.
+- Prefer gameplay systems that can run under an authoritative or host-authoritative model rather than local-only assumptions.
+- Keep player identity, matchmaking, lobbies, entitlement checks, voice/social features, and platform services isolated behind explicit interfaces until the final Quest Store and Photon integration choices are confirmed.
+- Plan for multiple arenas as data-driven or scene-driven content modules, not hard-coded variants.
+- Model "House Rules" as composable rule sets that can be enabled per arena, lobby, match, or playlist.
+- Keep cosmetic visual effects separate from gameplay state so network synchronization stays small, clear, and reliable.
+
 ## Current Milestone
 
-Current stage: the basic empty OpenXR scene has been successfully deployed to and viewed on a Meta Quest 2. Preserve and harden that baseline.
+Current stage: launching into an immersive OpenXR scene on a Meta Quest headset has been achieved. Preserve that working Quest baseline while beginning the next playable milestone.
 
-Create the smallest viable scene that:
+Next milestone: create a minimal single-player pong game that can run inside the established VR scene.
 
-1. Starts an OpenXR session on Quest.
-2. Uses the headset pose as the player camera.
-3. Leaves the surrounding world empty except for minimal lighting or origin helpers required for orientation.
-4. Logs OpenXR startup state and any non-crashing fallback reason.
+The first step for this milestone is ball physics:
 
-Avoid adding gameplay, menus, multiplayer, locomotion, physics toys, platform identity flows, or visual polish until this baseline remains reliable on hardware.
+1. Add a simple ball with predictable motion.
+2. Keep ball behavior deterministic enough to support future multiplayer authority and replication.
+3. Use Godot physics in a small, inspectable setup before adding scoring, cups, throws, arenas, or effects.
+4. Verify that the ball simulation runs in the editor and does not break OpenXR startup on Quest.
+
+Avoid adding menus, multiplayer, locomotion, platform identity flows, arena polish, or House Rules until the minimal single-player ball behavior is reliable.
+
+Even during single-player prototyping, avoid choices that would make later multiplayer support difficult. Scene ownership, player rigs, input handling, ball state, and future gameplay scripts should be structured so they can be cleanly separated into local-player, remote-player, and shared match-state responsibilities.
 
 ## Repository Expectations
 
@@ -51,6 +68,13 @@ Keep generated Godot cache folders, Android build outputs, keystores, and local 
 - Do not hard-code personal account IDs, app IDs, tokens, signing passwords, or machine-specific Android paths.
 - Gate Quest-only code so the project can still open in the Godot editor without crashing.
 - Prefer small scenes and scripts that can be inspected quickly.
+- Keep systems multiplayer-ready: separate local input capture from replicated state, keep authoritative match decisions centralized, and avoid direct scene lookups that assume only one player exists.
+- Do not introduce Photon code, SDK calls, app IDs, regions, or matchmaking assumptions until the Photon plugin/package version and setup path are documented.
+- When Photon is introduced, wrap it behind project-owned networking interfaces so gameplay code is not tightly coupled to vendor APIs.
+- Keep future arena content modular. Arena geometry, lighting, ambience, VFX, spawn points, cup layouts, and House Rules should be replaceable without rewriting core match logic.
+- Make rule behavior explicit and testable. House Rules should describe what they change, how they replicate, and which side has authority.
+- Budget VR visuals for Quest hardware first. Stylish arenas and effects are encouraged later, but they must respect frame-rate, comfort, memory, and thermal limits.
+- Keep paid-release concerns in mind: no checked-in secrets, no local signing credentials, no placeholder third-party assets with unclear licenses, and no store-only assumptions that break editor workflows.
 
 ## Quest OpenXR Setup Notes
 
@@ -75,6 +99,15 @@ Before declaring the milestone done, verify as much of this checklist as the ava
 
 If hardware testing is not possible, say so explicitly and list what was verified locally.
 
+For future multiplayer and commercial-release work, also verify the relevant parts of this checklist:
+
+- Local and remote player responsibilities are clearly separated.
+- Networked gameplay state has an identified authority.
+- Photon setup, versions, app configuration, and secrets handling are documented before use.
+- Arena-specific content can be loaded or swapped without changing core match logic.
+- House Rules can be enabled, disabled, and tested independently.
+- Quest performance remains within the target comfort budget on real hardware.
+
 ## Coding Style
 
 - Follow the style already present in the repo once source files exist.
@@ -90,6 +123,8 @@ When working in this repo:
 1. Inspect existing Godot files before making assumptions.
 2. Preserve user changes and unrelated work.
 3. Make narrowly scoped edits tied to the Quest OpenXR baseline.
-4. Update setup documentation whenever SDK, export, or deployment configuration changes.
-5. Run available validation commands before finishing.
-6. Report clearly what was changed, what was tested, and what still requires headset verification.
+4. Keep new code multiplayer-aware, even when implementing local-only scaffolding.
+5. Update setup documentation whenever SDK, export, networking, store, or deployment configuration changes.
+6. Document expected versions and setup steps before adding Photon, platform services, or other external dependencies.
+7. Run available validation commands before finishing.
+8. Report clearly what was changed, what was tested, and what still requires headset verification.

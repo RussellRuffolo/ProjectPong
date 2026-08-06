@@ -1,7 +1,8 @@
-[gd_scene load_steps=17 format=3 uid="uid://bq1hqkibx0cax"]
+[gd_scene load_steps=24 format=3 uid="uid://bq1hqkibx0cax"]
 
 [ext_resource type="Script" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
 [ext_resource type="Script" path="res://scripts/hand_grabber.gd" id="2_handgrab"]
+[ext_resource type="Script" path="res://scripts/throwable_ball.gd" id="3_ball"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.46, 0.5, 0.55, 1)
@@ -37,11 +38,25 @@ roughness = 0.55
 albedo_color = Color(1, 0.96, 0.82, 1)
 roughness = 0.72
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Floor"]
+albedo_color = Color(0.18, 0.2, 0.19, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Table"]
+albedo_color = Color(0.05, 0.48, 0.38, 1)
+roughness = 0.7
+
 [sub_resource type="BoxMesh" id="BoxMesh_XAxis"]
 size = Vector3(1, 0.02, 0.02)
 
 [sub_resource type="BoxMesh" id="BoxMesh_ZAxis"]
 size = Vector3(0.02, 0.02, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_Floor"]
+size = Vector3(4, 0.05, 4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_Table"]
+size = Vector3(1.2, 0.06, 0.72)
 
 [sub_resource type="SphereMesh" id="SphereMesh_HandMarker"]
 radius = 0.035
@@ -56,6 +71,12 @@ radius = 0.09
 
 [sub_resource type="SphereShape3D" id="SphereShape_PingPongBall"]
 radius = 0.02
+
+[sub_resource type="BoxShape3D" id="BoxShape_Floor"]
+size = Vector3(4, 0.05, 4)
+
+[sub_resource type="BoxShape3D" id="BoxShape_Table"]
+size = Vector3(1.2, 0.06, 0.72)
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_xrboot")
@@ -106,12 +127,35 @@ collision_layer = 0
 [node name="CollisionShape3D" type="CollisionShape3D" parent="XROrigin3D/RightController/GrabArea"]
 shape = SubResource("SphereShape_GrabArea")
 
+[node name="PhysicsSurfaces" type="Node3D" parent="."]
+
+[node name="BounceFloor" type="StaticBody3D" parent="PhysicsSurfaces"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/BounceFloor"]
+mesh = SubResource("BoxMesh_Floor")
+material_override = SubResource("StandardMaterial3D_Floor")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/BounceFloor"]
+shape = SubResource("BoxShape_Floor")
+
+[node name="BounceTable" type="StaticBody3D" parent="PhysicsSurfaces"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -1.35)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/BounceTable"]
+mesh = SubResource("BoxMesh_Table")
+material_override = SubResource("StandardMaterial3D_Table")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/BounceTable"]
+shape = SubResource("BoxShape_Table")
+
 [node name="Grabbables" type="Node3D" parent="."]
 
 [node name="TestPingPongBall" type="RigidBody3D" parent="Grabbables" groups=["grabbable"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, -0.55)
 mass = 0.0027
 gravity_scale = 0.0
+script = ExtResource("3_ball")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Grabbables/TestPingPongBall"]
 mesh = SubResource("SphereMesh_PingPongBall")
