@@ -4,8 +4,8 @@ class_name ThrowableBall
 signal grabbed(grabber: Node3D)
 signal released(grabber: Node3D, release_linear_velocity: Vector3, release_angular_velocity: Vector3)
 
-@export_range(0.0, 1.0, 0.01) var bounce := 0.82
-@export_range(0.0, 1.0, 0.01) var friction := 0.06
+@export_range(0.0, 1.0, 0.01) var bounce := 0.55
+@export_range(0.0, 1.0, 0.01) var friction := 0.12
 @export var held_gravity_scale := 0.0
 @export var flight_gravity_scale := 1.0
 @export var held_linear_damp := 0.0

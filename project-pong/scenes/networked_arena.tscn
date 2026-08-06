@@ -1,0 +1,170 @@
+[gd_scene format=3 uid="uid://c18dng7swnk7v"]
+
+[ext_resource type="Script" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
+[ext_resource type="Script" path="res://scripts/photon_session.gd" id="2_session"]
+[ext_resource type="Script" path="res://scripts/networked_arena.gd" id="3_arena"]
+[ext_resource type="Script" path="res://scripts/network_match_state.gd" id="4_match"]
+[ext_resource type="PackedScene" path="res://scenes/network_hand_avatar.tscn" id="5_hand"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
+sky_horizon_color = Color(0.42, 0.48, 0.54, 1)
+ground_horizon_color = Color(0.16, 0.18, 0.2, 1)
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("ProceduralSkyMaterial_1")
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+ambient_light_source = 2
+ambient_light_color = Color(0.68, 0.72, 0.76, 1)
+ambient_light_energy = 0.68
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_LeftHand"]
+albedo_color = Color(0.2, 0.85, 1, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_RightHand"]
+albedo_color = Color(1, 0.42, 0.28, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Floor"]
+albedo_color = Color(0.18, 0.2, 0.19, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Table"]
+albedo_color = Color(0.05, 0.48, 0.38, 1)
+roughness = 0.7
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_SpawnA"]
+albedo_color = Color(0.2, 0.62, 1, 1)
+roughness = 0.65
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_SpawnB"]
+albedo_color = Color(1, 0.72, 0.28, 1)
+roughness = 0.65
+
+[sub_resource type="SphereMesh" id="SphereMesh_HandMarker"]
+radius = 0.035
+height = 0.07
+
+[sub_resource type="BoxMesh" id="BoxMesh_Floor"]
+size = Vector3(4, 0.05, 4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_Table"]
+size = Vector3(1.2, 0.06, 0.72)
+
+[sub_resource type="BoxMesh" id="BoxMesh_SpawnMarker"]
+size = Vector3(0.25, 0.02, 0.25)
+
+[sub_resource type="BoxShape3D" id="BoxShape_Floor"]
+size = Vector3(4, 0.05, 4)
+
+[sub_resource type="BoxShape3D" id="BoxShape_Table"]
+size = Vector3(1.2, 0.06, 0.72)
+
+[sub_resource type="LabelSettings" id="LabelSettings_Status"]
+font_size = 24
+font_color = Color(1, 0.96, 0.84, 1)
+outline_size = 5
+outline_color = Color(0.03, 0.035, 0.04, 1)
+
+[node name="NetworkedArenaRoot" type="Node3D"]
+script = ExtResource("1_xrboot")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.353553, 0.612372, 0, 0.866025, 0.5, -0.707107, -0.353553, 0.612372, 0, 3, 0)
+light_energy = 1.15
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+unique_name_in_owner = true
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+current = true
+
+[node name="LeftController" type="XRController3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+tracker = &"left_hand"
+
+[node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/LeftController"]
+mesh = SubResource("SphereMesh_HandMarker")
+material_override = SubResource("StandardMaterial3D_LeftHand")
+
+[node name="RightController" type="XRController3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+tracker = &"right_hand"
+
+[node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/RightController"]
+mesh = SubResource("SphereMesh_HandMarker")
+material_override = SubResource("StandardMaterial3D_RightHand")
+
+[node name="PhysicsSurfaces" type="Node3D" parent="."]
+
+[node name="Floor" type="StaticBody3D" parent="PhysicsSurfaces"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Floor"]
+mesh = SubResource("BoxMesh_Floor")
+material_override = SubResource("StandardMaterial3D_Floor")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Floor"]
+shape = SubResource("BoxShape_Floor")
+
+[node name="Table" type="StaticBody3D" parent="PhysicsSurfaces"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -1.35)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Table"]
+mesh = SubResource("BoxMesh_Table")
+material_override = SubResource("StandardMaterial3D_Table")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Table"]
+shape = SubResource("BoxShape_Table")
+
+[node name="SpawnMarkers" type="Node3D" parent="."]
+
+[node name="PlayerOneMarker" type="MeshInstance3D" parent="SpawnMarkers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7, 0.01, -0.15)
+mesh = SubResource("BoxMesh_SpawnMarker")
+material_override = SubResource("StandardMaterial3D_SpawnA")
+
+[node name="PlayerTwoMarker" type="MeshInstance3D" parent="SpawnMarkers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7, 0.01, -0.15)
+mesh = SubResource("BoxMesh_SpawnMarker")
+material_override = SubResource("StandardMaterial3D_SpawnB")
+
+[node name="StatusLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, 0, 1.45, -1.05)
+pixel_size = 0.0022
+billboard = 1
+text = "Online Arena"
+label_settings = SubResource("LabelSettings_Status")
+
+[node name="Network" type="Node" parent="."]
+
+[node name="PhotonSession" type="Node" parent="Network"]
+script = ExtResource("2_session")
+auto_connect = false
+
+[node name="SpawnedHands" type="Node3D" parent="Network"]
+
+[node name="HandSpawner" type="FusionSpawner" parent="Network"]
+spawn_path = NodePath("../SpawnedHands")
+spawnable_scenes = [ExtResource("5_hand")]
+
+[node name="NetworkMatchState" type="Node" parent="Network"]
+script = ExtResource("4_match")
+session_path = NodePath("../PhotonSession")
+
+[node name="NetworkedArena" type="Node" parent="Network"]
+script = ExtResource("3_arena")
+session_path = NodePath("../PhotonSession")
+hand_spawner_path = NodePath("../HandSpawner")
+match_state_path = NodePath("../NetworkMatchState")
+left_controller_path = NodePath("../../XROrigin3D/LeftController")
+right_controller_path = NodePath("../../XROrigin3D/RightController")
+status_label_path = NodePath("../../StatusLabel")
+network_hand_scene = ExtResource("5_hand")

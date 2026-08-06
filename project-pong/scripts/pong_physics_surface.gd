@@ -2,7 +2,7 @@ extends StaticBody3D
 class_name PongPhysicsSurface
 
 @export var surface_id := &"default"
-@export_range(0.0, 1.0, 0.01) var bounce := 0.2
+@export_range(0.0, 1.0, 0.01) var bounce := 0.1
 @export_range(0.0, 1.0, 0.01) var friction := 0.8
 @export var absorbs_ball_bounce := false
 @export var rough := false

@@ -1,0 +1,50 @@
+[gd_scene format=3 uid="uid://ctfl4eisrwxxj"]
+
+[ext_resource type="Script" path="res://scripts/network_hand_avatar.gd" id="1_hand"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Hand"]
+albedo_color = Color(0.95, 0.78, 0.24, 1)
+roughness = 0.55
+
+[sub_resource type="SphereMesh" id="SphereMesh_Hand"]
+radius = 0.045
+height = 0.09
+
+[sub_resource type="BoxMesh" id="BoxMesh_Aim"]
+size = Vector3(0.014, 0.014, 0.18)
+
+[sub_resource type="LabelSettings" id="LabelSettings_Hand"]
+font_size = 24
+font_color = Color(1, 0.96, 0.84, 1)
+outline_size = 4
+outline_color = Color(0.02, 0.025, 0.025, 1)
+
+[node name="NetworkHandAvatar" type="Node3D"]
+script = ExtResource("1_hand")
+
+[node name="FusionSharedReplicator" type="FusionSharedReplicator" parent="."]
+root_path = NodePath("..")
+owner_mode = 2
+update_interval = 1
+object_interpolation_time = 0.05
+root_replication_mode = 1
+root_global_coordinates = true
+root_interpolation_mode = 1
+root_teleport_threshold = 1.0
+root_rotation_teleport_threshold = 90.0
+
+[node name="HandMarker" type="MeshInstance3D" parent="."]
+mesh = SubResource("SphereMesh_Hand")
+material_override = SubResource("StandardMaterial3D_Hand")
+
+[node name="AimMarker" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.11)
+mesh = SubResource("BoxMesh_Aim")
+material_override = SubResource("StandardMaterial3D_Hand")
+
+[node name="Label3D" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.075, 0)
+pixel_size = 0.0014
+billboard = 1
+text = "Network Hand"
+label_settings = SubResource("LabelSettings_Hand")

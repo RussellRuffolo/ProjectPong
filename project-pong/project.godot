@@ -20,6 +20,16 @@ config/icon="res://icon.svg"
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[fusion]
+
+connection/app_id="a0ffb643-bc7a-47e7-abd1-7a0215eaf4be"
+connection/default_room="project-pong-dev-room"
+connection/region=""
+
+[meta]
+
+platform/app_id=""
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
@@ -34,4 +44,3 @@ textures/vram_compression/import_etc2_astc=true
 [xr]
 
 openxr/enabled=true
-openxr/default_action_map="res://openxr_action_map.tres"

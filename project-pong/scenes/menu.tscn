@@ -147,7 +147,7 @@ selectable = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.54, 0.04)
 script = ExtResource("3_button")
 label_text = "Online Arena"
-selectable = false
+target_scene_path = "res://scenes/networked_arena.tscn"
 
 [node name="GamemodeMenu" type="Node3D" parent="."]
 script = ExtResource("2_menu")
