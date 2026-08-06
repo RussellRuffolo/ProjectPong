@@ -25,6 +25,13 @@ func _configure_xr_nodes() -> void:
 
 
 func _start_openxr() -> void:
+	if _should_use_non_xr_fallback():
+		var reason := "OpenXR startup skipped for local non-XR validation."
+		print("[XR] %s" % reason)
+		openxr_unavailable.emit(reason)
+		_enable_editor_fallback()
+		return
+
 	_openxr = XRServer.find_interface("OpenXR")
 	if _openxr == null:
 		var reason := "OpenXR interface was not found. Running the scene in non-XR editor fallback mode."
@@ -54,6 +61,18 @@ func _start_openxr() -> void:
 	print("[XR] OpenXR session requested. Viewport XR is enabled: %s." % get_viewport().use_xr)
 	print("[XR] Primary XR interface: %s." % XRServer.primary_interface.get_name())
 	openxr_ready.emit(_openxr)
+
+
+func _should_use_non_xr_fallback() -> bool:
+	return DisplayServer.get_name() == "headless" or _cmdline_has_xr_mode_off()
+
+
+func _cmdline_has_xr_mode_off() -> bool:
+	var args := OS.get_cmdline_args()
+	for index in range(args.size()):
+		if args[index] == "--xr-mode" and index + 1 < args.size():
+			return args[index + 1] == "off"
+	return false
 
 
 func _enable_editor_fallback() -> void:

@@ -8,7 +8,9 @@ This project implements a basic XR boot scene for Meta Quest. The target is a mi
 - The scene contains `XROrigin3D`, `XRCamera3D`, `LeftController`, and `RightController`.
 - `res://scripts/xr_bootstrap.gd` finds and initializes the Godot OpenXR interface, enables XR on the viewport, and logs fallback reasons instead of crashing.
 - `res://scripts/hand_grabber.gd` shows a small marker at each tracked hand/controller pose and lets either hand grab nearby objects in the `grabbable` group.
-- The world is intentionally empty except for lighting, sky, a tiny origin helper, and a floating ping pong ball used to test grabbing.
+- `res://scripts/throwable_ball.gd` owns the early ball flight and bounce tuning.
+- `res://scripts/throw_motion_sampler.gd` estimates controller release velocity for simple throwing.
+- The world is intentionally minimal except for lighting, sky, a tiny origin helper, basic bounce surfaces, and a ping pong ball used to test throwing.
 
 ## Local editor smoke test
 
@@ -28,6 +30,30 @@ Expected desktop fallback log:
 ```
 
 If your PC has an active OpenXR runtime, the log may instead show that the OpenXR interface initialized.
+
+## Codex validation smoke test
+
+Codex validation should run without a headset and without opening the desktop OpenXR alert. Use the non-XR validation helper from the repository root:
+
+```powershell
+.\tools\validate_codex.cmd
+```
+
+The helper runs Godot with:
+
+```powershell
+.\Godot_v4.7.1-stable_win64_console.exe --headless --xr-mode off --path project-pong --log-file codex-validation.log --quit
+```
+
+Important details:
+
+- `--xr-mode off` prevents Godot's startup OpenXR alert when no HMD is connected.
+- `--headless` avoids creating a visible game window.
+- `--log-file codex-validation.log` writes logs inside the workspace instead of Godot's user log directory.
+- `xr_bootstrap.gd` detects headless or `--xr-mode off` runs and uses the normal editor fallback camera instead of initializing OpenXR.
+- The `.cmd` wrapper bypasses local PowerShell script execution policy only for this validation helper.
+
+This smoke test verifies that the project, main scene, and GDScript files load cleanly. It does not verify headset tracking, Android export behavior, or real Quest OpenXR startup.
 
 ## Required dependencies
 
@@ -99,9 +125,10 @@ adb devices
 4. Move your head and confirm the camera pose updates.
 5. Move each controller or tracked hand and confirm the colored hand markers follow the tracked pose.
 6. Reach toward the floating ping pong ball in front of the starting position.
-7. Hold the grip/grasp input to grab the ball, move it, then release to let go.
-8. Look down near your starting position for the small origin helper.
-9. Watch `adb logcat` or Godot's deploy output for `[XR]` startup messages.
+7. Hold the grip/grasp input to grab the ball, move your hand, then release to throw it.
+8. Confirm the ball enters gravity-driven flight and bounces against the simple table/floor surfaces.
+9. Look down near your starting position for the small origin helper.
+10. Watch `adb logcat` or Godot's deploy output for `[XR]` and `[Ball]` startup messages.
 
 Useful logcat filter:
 
@@ -143,9 +170,10 @@ The exported APK should contain these files and manifest entries:
 - The app launches on Quest 2 or Quest 3 as an immersive VR app.
 - Head pose updates correctly in headset.
 - Left and right hand/controller markers follow tracked hand poses.
-- The floating ping pong ball can be grabbed with grip/grasp input and released without crashing.
+- The ping pong ball can be grabbed with grip/grasp input, thrown from controller motion, and bounced against the simple physics surfaces.
 - Startup logs identify whether OpenXR was found, initialized, and enabled.
+- `.\tools\validate_codex.cmd` runs successfully without a headset for local scene/script validation.
 
 ## Known next step
 
-Keep the next milestone focused on the smallest useful VR interaction or scene requirement while preserving the current on-device OpenXR baseline.
+Tune the single-player ball physics on real Quest hardware, then add the next smallest pong interaction without coupling gameplay code to a future networking vendor.

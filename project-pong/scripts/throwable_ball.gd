@@ -1,6 +1,9 @@
 extends RigidBody3D
 class_name ThrowableBall
 
+signal grabbed(grabber: Node3D)
+signal released(grabber: Node3D, release_linear_velocity: Vector3, release_angular_velocity: Vector3)
+
 @export_range(0.0, 1.0, 0.01) var bounce := 0.82
 @export_range(0.0, 1.0, 0.01) var friction := 0.06
 @export var held_gravity_scale := 0.0
@@ -26,6 +29,7 @@ func _ready() -> void:
 func on_grabbed(_grabber: Node3D) -> void:
 	_set_held_physics()
 	sleeping = false
+	grabbed.emit(_grabber)
 
 
 func on_released(_grabber: Node3D, release_linear_velocity: Vector3, _release_angular_velocity: Vector3) -> void:
@@ -33,7 +37,21 @@ func on_released(_grabber: Node3D, release_linear_velocity: Vector3, _release_an
 	linear_velocity = release_linear_velocity
 	angular_velocity = release_spin
 	sleeping = false
+	released.emit(_grabber, release_linear_velocity, angular_velocity)
 	print("[Ball] Released with velocity %s." % linear_velocity)
+
+
+func reset_to_transform(reset_transform: Transform3D, suspend_physics := true) -> void:
+	freeze = false
+	global_transform = reset_transform
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	sleeping = false
+
+	if suspend_physics:
+		_set_held_physics()
+	else:
+		_set_flight_physics()
 
 
 func _create_ball_material() -> PhysicsMaterial:

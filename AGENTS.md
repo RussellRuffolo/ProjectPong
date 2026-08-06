@@ -90,6 +90,7 @@ Useful sources to re-check when changing deployment setup:
 Before declaring the milestone done, verify as much of this checklist as the available hardware and SDK setup allow:
 
 - Godot project opens without import errors.
+- `.\tools\validate_codex.cmd` runs successfully for local Codex validation without a headset.
 - Main scene runs in the editor without script crashes.
 - Android export preset targets Quest-compatible OpenXR.
 - Build installs on Meta Quest 2 or Meta Quest 3.

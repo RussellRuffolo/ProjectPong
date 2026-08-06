@@ -1,8 +1,11 @@
-[gd_scene load_steps=24 format=3 uid="uid://bq1hqkibx0cax"]
+[gd_scene load_steps=28 format=3 uid="uid://bq1hqkibx0cax"]
 
 [ext_resource type="Script" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
 [ext_resource type="Script" path="res://scripts/hand_grabber.gd" id="2_handgrab"]
 [ext_resource type="Script" path="res://scripts/throwable_ball.gd" id="3_ball"]
+[ext_resource type="Script" path="res://scripts/single_player_game.gd" id="4_game"]
+[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="5_cup_visual"]
+[ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="6_cup_collision"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.46, 0.5, 0.55, 1)
@@ -45,6 +48,12 @@ roughness = 0.85
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Table"]
 albedo_color = Color(0.05, 0.48, 0.38, 1)
 roughness = 0.7
+
+[sub_resource type="LabelSettings" id="LabelSettings_Score"]
+font_size = 28
+font_color = Color(1, 0.96, 0.84, 1)
+outline_size = 5
+outline_color = Color(0.03, 0.035, 0.04, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_XAxis"]
 size = Vector3(1, 0.02, 0.02)
@@ -149,9 +158,11 @@ material_override = SubResource("StandardMaterial3D_Table")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/BounceTable"]
 shape = SubResource("BoxShape_Table")
 
+[node name="CupRack" type="Node3D" parent="."]
+
 [node name="Grabbables" type="Node3D" parent="."]
 
-[node name="TestPingPongBall" type="RigidBody3D" parent="Grabbables" groups=["grabbable"]]
+[node name="TestPingPongBall" type="RigidBody3D" parent="Grabbables" groups=["game_ball", "grabbable"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, -0.55)
 mass = 0.0027
 gravity_scale = 0.0
@@ -163,6 +174,22 @@ material_override = SubResource("StandardMaterial3D_PingPongBall")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Grabbables/TestPingPongBall"]
 shape = SubResource("SphereShape_PingPongBall")
+
+[node name="ScoreLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, -0.5, 1.35, -1.05)
+pixel_size = 0.0025
+billboard = 1
+text = "Score: 0 / 10
+Cups: 10"
+label_settings = SubResource("LabelSettings_Score")
+
+[node name="SinglePlayerGame" type="Node" parent="."]
+script = ExtResource("4_game")
+ball_path = NodePath("../Grabbables/TestPingPongBall")
+cup_parent_path = NodePath("../CupRack")
+score_label_path = NodePath("../ScoreLabel")
+cup_visual_scene = ExtResource("5_cup_visual")
+cup_collision_scene = ExtResource("6_cup_collision")
 
 [node name="OriginHelpers" type="Node3D" parent="."]
 
