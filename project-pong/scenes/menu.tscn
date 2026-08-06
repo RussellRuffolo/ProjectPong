@@ -1,0 +1,156 @@
+[gd_scene format=3 uid="uid://c8oaavev0sc6m"]
+
+[ext_resource type="Script" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
+[ext_resource type="Script" path="res://scripts/gamemode_menu.gd" id="2_menu"]
+[ext_resource type="Script" path="res://scripts/vr_menu_button.gd" id="3_button"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
+sky_horizon_color = Color(0.42, 0.46, 0.5, 1)
+ground_horizon_color = Color(0.18, 0.21, 0.22, 1)
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("ProceduralSkyMaterial_1")
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+ambient_light_source = 2
+ambient_light_color = Color(0.68, 0.72, 0.72, 1)
+ambient_light_energy = 0.72
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_BackPanel"]
+albedo_color = Color(0.055, 0.064, 0.068, 1)
+roughness = 0.82
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_LeftHand"]
+albedo_color = Color(0.2, 0.85, 1, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_RightHand"]
+albedo_color = Color(1, 0.42, 0.28, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Laser"]
+albedo_color = Color(0.92, 0.96, 0.82, 0.65)
+transparency = 1
+roughness = 0.45
+
+[sub_resource type="BoxMesh" id="BoxMesh_BackPanel"]
+size = Vector3(1.25, 1.02, 0.035)
+
+[sub_resource type="SphereMesh" id="SphereMesh_HandMarker"]
+radius = 0.035
+height = 0.07
+
+[sub_resource type="BoxMesh" id="BoxMesh_Laser"]
+size = Vector3(0.006, 0.006, 1.5)
+
+[sub_resource type="LabelSettings" id="LabelSettings_Title"]
+font_size = 48
+font_color = Color(1, 0.96, 0.84, 1)
+outline_size = 8
+outline_color = Color(0.02, 0.025, 0.025, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_Subtitle"]
+font_size = 28
+font_color = Color(0.76, 0.84, 0.8, 1)
+outline_size = 5
+outline_color = Color(0.02, 0.025, 0.025, 1)
+
+[node name="GamemodeMenuRoot" type="Node3D"]
+script = ExtResource("1_xrboot")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.353553, 0.612372, 0, 0.866025, 0.5, -0.707107, -0.353553, 0.612372, 0, 3, 0)
+light_energy = 1.1
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+unique_name_in_owner = true
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+current = true
+
+[node name="LeftController" type="XRController3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+tracker = &"left_hand"
+
+[node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/LeftController"]
+mesh = SubResource("SphereMesh_HandMarker")
+material_override = SubResource("StandardMaterial3D_LeftHand")
+
+[node name="PointerBeam" type="MeshInstance3D" parent="XROrigin3D/LeftController"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.75)
+mesh = SubResource("BoxMesh_Laser")
+material_override = SubResource("StandardMaterial3D_Laser")
+
+[node name="RightController" type="XRController3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+tracker = &"right_hand"
+
+[node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/RightController"]
+mesh = SubResource("SphereMesh_HandMarker")
+material_override = SubResource("StandardMaterial3D_RightHand")
+
+[node name="PointerBeam" type="MeshInstance3D" parent="XROrigin3D/RightController"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.75)
+mesh = SubResource("BoxMesh_Laser")
+material_override = SubResource("StandardMaterial3D_Laser")
+
+[node name="MenuPanel" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.996195, 0.0871557, 0, -0.0871557, 0.996195, 0, 1.38, -1.55)
+
+[node name="BackPanel" type="MeshInstance3D" parent="MenuPanel"]
+mesh = SubResource("BoxMesh_BackPanel")
+material_override = SubResource("StandardMaterial3D_BackPanel")
+
+[node name="Title" type="Label3D" parent="MenuPanel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.39, 0.026)
+pixel_size = 0.002
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "Project Pong"
+label_settings = SubResource("LabelSettings_Title")
+
+[node name="Subtitle" type="Label3D" parent="MenuPanel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.28, 0.026)
+pixel_size = 0.0018
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "Select Gamemode"
+label_settings = SubResource("LabelSettings_Subtitle")
+
+[node name="Buttons" type="Node3D" parent="MenuPanel"]
+
+[node name="Practice" type="Area3D" parent="MenuPanel/Buttons"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12, 0.04)
+script = ExtResource("3_button")
+label_text = "Practice"
+target_scene_path = "res://scenes/main.tscn"
+
+[node name="ClassicMatch" type="Area3D" parent="MenuPanel/Buttons"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0.04)
+script = ExtResource("3_button")
+label_text = "Classic Match"
+selectable = false
+
+[node name="HouseRules" type="Area3D" parent="MenuPanel/Buttons"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.32, 0.04)
+script = ExtResource("3_button")
+label_text = "House Rules"
+selectable = false
+
+[node name="OnlineArena" type="Area3D" parent="MenuPanel/Buttons"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.54, 0.04)
+script = ExtResource("3_button")
+label_text = "Online Arena"
+selectable = false
+
+[node name="GamemodeMenu" type="Node3D" parent="."]
+script = ExtResource("2_menu")
+left_controller_path = NodePath("../XROrigin3D/LeftController")
+right_controller_path = NodePath("../XROrigin3D/RightController")
+button_parent_path = NodePath("../MenuPanel/Buttons")
