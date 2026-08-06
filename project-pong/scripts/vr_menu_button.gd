@@ -31,6 +31,17 @@ func set_hovered(is_hovered: bool) -> void:
 	_apply_visual_state()
 
 
+func set_label_text(next_label_text: String) -> void:
+	label_text = next_label_text
+	if _label != null:
+		_label.text = label_text
+
+
+func set_selectable(is_selectable: bool) -> void:
+	selectable = is_selectable
+	_apply_visual_state()
+
+
 func activate() -> void:
 	if not selectable:
 		return

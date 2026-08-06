@@ -5,6 +5,7 @@
 [ext_resource type="Script" path="res://scripts/networked_arena.gd" id="3_arena"]
 [ext_resource type="Script" path="res://scripts/network_match_state.gd" id="4_match"]
 [ext_resource type="PackedScene" path="res://scenes/network_hand_avatar.tscn" id="5_hand"]
+[ext_resource type="Script" path="res://scripts/photon_lobby_ui.gd" id="6_lobby"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.42, 0.48, 0.54, 1)
@@ -143,11 +144,20 @@ billboard = 1
 text = "Online Arena"
 label_settings = SubResource("LabelSettings_Status")
 
+[node name="LobbyUi" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.996195, 0.0871557, 0, -0.0871557, 0.996195, 0, 1.42, -1.55)
+script = ExtResource("6_lobby")
+session_path = NodePath("../Network/PhotonSession")
+left_controller_path = NodePath("../XROrigin3D/LeftController")
+right_controller_path = NodePath("../XROrigin3D/RightController")
+
 [node name="Network" type="Node" parent="."]
 
 [node name="PhotonSession" type="Node" parent="Network"]
 script = ExtResource("2_session")
 auto_connect = false
+join_default_room_on_start = false
+visible_room = true
 
 [node name="SpawnedHands" type="Node3D" parent="Network"]
 
