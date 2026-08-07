@@ -4,7 +4,7 @@
 
 Build toward a paid VR "beer pong" style multiplayer game for release on the Meta Quest store. The long-term product should support online multiplayer, stylized arenas, arena-specific "House Rules", responsive VR interactions, and visual effects that make each venue feel distinct.
 
-The current playable baseline includes an immersive OpenXR scene on Quest and a minimal single-player pong prototype. Preserve that working Quest baseline while building the first multiplayer demo.
+The current playable baseline includes an immersive OpenXR scene on Quest, Practice mode, a basic Classic Match, and networked room creation/join with a basic multiplayer match. Preserve those working baselines while expanding gameplay depth.
 
 Prioritize a real on-device Quest experience over desktop-only simulation. Editor previews are useful, but they are not a substitute for testing on hardware.
 
@@ -14,14 +14,14 @@ Prioritize a real on-device Quest experience over desktop-only simulation. Edito
 - XR runtime: OpenXR.
 - Devices: Meta Quest 2 and Meta Quest 3.
 - Platform: Android export for Quest.
-- Planned networking layer: Photon Fusion Godot.
+- Networking layer: Photon Fusion Godot 3 preview.
 
 If a dependency, SDK, or plugin version is not yet present in the repo, document the expected version and setup steps before wiring code against it.
 
 ## Product Direction
 
 - Design the codebase for a commercial Quest release, with attention to performance, comfort, store-readiness, deterministic behavior, and maintainable content pipelines.
-- Treat multiplayer as a core architectural constraint, even before networking is implemented.
+- Treat multiplayer as a core architectural constraint now that the first networked room flow exists.
 - Prefer gameplay systems that can run under an authoritative or host-authoritative model rather than local-only assumptions.
 - Keep player identity, matchmaking, lobbies, entitlement checks, voice/social features, and platform services isolated behind explicit interfaces until the final Quest Store and Photon integration choices are confirmed.
 - Plan for multiple arenas as data-driven or scene-driven content modules, not hard-coded variants.
@@ -30,26 +30,26 @@ If a dependency, SDK, or plugin version is not yet present in the repo, document
 
 ## Current Milestone
 
-Current stage: launching into an immersive OpenXR scene on a Meta Quest headset has been achieved, and the minimal single-player pong game has been achieved.
+Current stage: launching into an immersive OpenXR scene on a Meta Quest headset has been achieved. Practice mode, a basic Classic Match, and networked room creation/join with a basic multiplayer match have also been achieved.
 
-Next milestone: create a minimal 2-player multiplayer demo that can run inside the established VR scene.
+Next milestone: deepen the match rules and opponent systems without breaking the established Practice, Classic Match, or basic multiplayer flows.
 
-The first multiplayer milestone should prove the smallest useful loop:
+The near-term milestone should prove the following gameplay loop:
 
-1. Two Quest headsets can join the same private multiplayer room.
-2. Each headset owns and replicates its local player rig or controller pose.
-3. The ball has explicit network authority and replicates predictably.
-4. Match state and scoring decisions are centralized behind a small match-state script, even if scoring stays minimal.
-5. The demo works without developer-hosted servers by using Photon Cloud.
-6. OpenXR startup, head tracking, and the single-player baseline are not broken.
+1. A collection of composable "House Rules" can modify game logic or match flow.
+2. Any subset of available House Rules can be applied to a given match.
+3. House Rules describe what they change, how they interact with scoring/reset behavior, and which side has authority in multiplayer.
+4. Computer player shot logic can choose a target cup through a swappable selection heuristic, such as closest cup, most central cup, or future personality-specific strategies.
+5. Computer player throws include a configurable accuracy modifier so the intended target cup is not scored every shot.
+6. Practice mode, basic Classic Match, networked room creation/join, and the basic multiplayer match remain stable.
 
-Avoid adding public matchmaking, locomotion, arena polish, House Rules, Photon custom server plugins, paid platform flows, or broad social features until the private 2-player room works reliably.
+Avoid adding public matchmaking, locomotion, arena polish, Photon custom server plugins, paid platform flows, or broad social features until House Rules and computer player behavior work reliably on top of the current match baseline.
 
 Keep the multiplayer prototype structured so local-player, remote-player, ball authority, and shared match-state responsibilities are visibly separate.
 
 ## Multiplayer Implementation Guidance
 
-Use this stack for the first multiplayer prototype:
+Use this stack for the current multiplayer prototype:
 
 - Godot 4.7.1.
 - OpenXR Vendors plugin for the existing Quest OpenXR baseline.
@@ -58,7 +58,7 @@ Use this stack for the first multiplayer prototype:
 - Photon Dashboard App ID and Meta Developer Dashboard App ID, configured outside source control.
 - Android export with the `INTERNET` permission enabled.
 
-Start with 2-player private rooms using Photon Fusion Shared-Authority. Meta friends and invites should be a social/session handoff layer, not the core gameplay transport.
+Keep the current 2-player private rooms on Photon Fusion Shared-Authority. Meta friends and invites should be a social/session handoff layer, not the core gameplay transport.
 
 The intended private-room flow is:
 
@@ -78,15 +78,15 @@ Networking rules for the prototype:
 - Photon Fusion Godot 3 is a preview SDK. It is acceptable for this prototype, but document the exact version before adding it and treat production readiness as a release risk.
 - Do not introduce dedicated server hosting for this milestone. Photon Cloud should provide the required no-developer-hosting multiplayer path.
 
-## Current Multiplayer First Pass
+## Current Multiplayer State
 
-The online multiplayer workbench is `res://scenes/networked_arena.tscn`, reached from the menu's `Online Arena` button. Keep this scene focused on proving two-player Photon room connection, local hand ownership, remote hand visibility, ball authority, and centralized match-state behavior before adding arena polish.
+The online multiplayer workbench is `res://scenes/networked_arena.tscn`, reached from the menu's `Online Arena` button. This scene has proven networked room creation/join with a basic multiplayer match. Keep it focused on hardening local hand ownership, remote hand visibility, ball authority, and centralized match-state behavior before adding arena polish.
 
 Photon-facing runtime calls should start in `res://scripts/photon_session.gd`. Gameplay scripts should depend on project-owned scripts such as `PhotonSession`, `NetworkedArena`, `NetworkHandAvatar`, and `NetworkMatchState` rather than scattering raw Fusion singleton calls through gameplay code.
 
-The first pass uses `FusionSpawner` plus `FusionSharedReplicator` hand avatars in `res://scenes/network_hand_avatar.tscn`. Each local hand requests Shared-Authority ownership and drives its replicated root transform from the local XR controller. Validate this exact behavior on two Quest headsets before building ball authority on top of it.
+The current networking pass uses `FusionSpawner` plus `FusionSharedReplicator` hand avatars in `res://scenes/network_hand_avatar.tscn`. Each local hand requests Shared-Authority ownership and drives its replicated root transform from the local XR controller. Keep validating this behavior on two Quest headsets as match rules, computer opponents, and authority behavior evolve.
 
-Configuration rules for this pass:
+Configuration rules for this networking pass:
 
 - `PhotonSession` reads `PHOTON_FUSION_APP_ID` first, then `fusion/connection/app_id`; keep real values out of source control.
 - The default private room is `fusion/connection/default_room`, and can be overridden with `--pong-room`.
@@ -94,6 +94,18 @@ Configuration rules for this pass:
 - The current Photon package is the checked-in `res://addons/fusion` Photon Fusion Godot 3 preview package. Its manifest does not expose a precise build number, so record the source package version/build hash in `docs/multiplayer_photon_roadmap.md` before upgrading or hardening the integration.
 
 Current roadmap lives in `docs/multiplayer_photon_roadmap.md`. Update it whenever Photon setup, Meta handoff, room flow, authority ownership, or hardware verification changes.
+
+## Current Gameplay Systems
+
+Practice mode is available for local shot practice and should remain the quickest way to test throwing, cup interaction, reset behavior, and future computer player shot tuning.
+
+Basic Classic Match is available as the first standard match flow. Keep new scoring behavior, reset behavior, and House Rules compatible with this match unless a rule explicitly overrides part of the flow.
+
+The basic multiplayer match is available through networked room creation/join. Multiplayer changes should continue to keep local-player input, remote-player representation, ball authority, and shared match decisions separate.
+
+House Rules should be implemented as composable rule modules or data-driven rule definitions. A match should be able to enable any subset of rules, and each rule should make its gameplay effects explicit enough to test independently.
+
+Computer player shot logic should be separated into target selection and throw execution. Target selection should support multiple heuristics, such as closest cup or most central cup, while throw execution should apply an accuracy modifier so different computer players can feel distinct without changing core physics or scoring code.
 
 ## Repository Expectations
 

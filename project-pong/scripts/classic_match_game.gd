@@ -6,6 +6,7 @@ const CupTargetScript := preload("res://scripts/cup_target.gd")
 const TURN_PLAYER := 0
 const TURN_COMPUTER := 1
 const RACK_SIZE := 10
+const COMPUTER_TARGET_MOST_CENTRAL := "most_central"
 
 @export var ball_path: NodePath
 @export var player_cup_parent_path: NodePath
@@ -34,7 +35,10 @@ const RACK_SIZE := 10
 @export var cup_remove_delay := 0.65
 @export var turn_transition_delay := 0.85
 @export var computer_shot_delay := 1.1
-@export_range(0.0, 1.0, 0.01) var computer_score_chance := 0.28
+@export_enum("most_central") var computer_target_heuristic := COMPUTER_TARGET_MOST_CENTRAL
+@export_range(0.0, 0.35, 0.005) var computer_accuracy_error_radius := 0 # 0.055
+@export var computer_throw_arc_height := 0.42
+@export var computer_aim_height_offset := 0.095
 @export var return_to_menu_delay := 3.0
 @export var menu_scene_path := "res://scenes/menu.tscn"
 
@@ -221,11 +225,26 @@ func _update_player_turn(delta: float) -> void:
 
 
 func _update_computer_turn(delta: float) -> void:
-	_computer_shot_countdown -= delta
-	if _computer_shot_countdown > 0.0:
+	if _reset_countdown >= 0.0:
+		_reset_countdown -= delta
+		if _reset_countdown <= 0.0:
+			_reset_ball_for_computer()
 		return
 
-	_resolve_computer_shot()
+	_computer_shot_countdown -= delta
+	if _computer_shot_countdown >= 0.0:
+		return
+
+	if not _attempt_active:
+		_execute_computer_throw()
+		return
+
+	_attempt_elapsed += delta
+	if _try_confirm_computer_score(delta):
+		return
+
+	if _is_computer_miss():
+		_resolve_computer_attempt(false, null)
 
 
 func _on_ball_released(_grabber: Node3D, _release_linear_velocity: Vector3, _release_angular_velocity: Vector3) -> void:
@@ -284,18 +303,62 @@ func _resolve_player_attempt(was_score: bool, scored_cup: Node3D) -> void:
 		_schedule_turn(TURN_COMPUTER, scored_reset_delay if was_score else turn_transition_delay)
 
 
-func _resolve_computer_shot() -> void:
+func _execute_computer_throw() -> void:
 	if _shots_remaining <= 0:
 		_schedule_turn(TURN_PLAYER, turn_transition_delay)
 		return
 
-	_shots_remaining = max(0, _shots_remaining - 1)
 	var target_cup := _select_computer_target_cup()
-	var scored := target_cup != null and _rng.randf() <= computer_score_chance
-	if scored:
+	if target_cup == null:
+		_schedule_turn(TURN_PLAYER, turn_transition_delay)
+		return
+
+	_attempt_active = true
+	_attempt_elapsed = 0.0
+	_shots_remaining = max(0, _shots_remaining - 1)
+	_clear_score_candidate()
+
+	var target_position := _get_computer_aim_position(target_cup)
+	var release_velocity := _calculate_computer_throw_velocity(_get_computer_ball_spawn_transform().origin, target_position)
+	_ball.reset_to_transform(_get_computer_ball_spawn_transform(), false)
+	_ball.linear_velocity = release_velocity
+	_ball.angular_velocity = _ball.release_spin
+	_ball.sleeping = false
+	_last_computer_shot_summary = "Computer aimed at %s." % target_cup.name
+	_update_status_label()
+	print("[ClassicMatch] Computer threw at %s with velocity %s. %d shots remaining." % [
+		target_cup.name,
+		release_velocity,
+		_shots_remaining,
+	])
+
+
+func _try_confirm_computer_score(delta: float) -> bool:
+	var resting_cup := _get_ball_resting_cup(_player_cup_parent)
+	if resting_cup == null or not _is_ball_settled():
+		_clear_score_candidate()
+		return false
+
+	if resting_cup != _score_candidate:
+		_score_candidate = resting_cup
+		_score_candidate_settled_elapsed = 0.0
+
+	_score_candidate_settled_elapsed += delta
+	if _score_candidate_settled_elapsed < scoring_settle_seconds:
+		return false
+
+	_resolve_computer_attempt(true, resting_cup)
+	return true
+
+
+func _resolve_computer_attempt(was_score: bool, scored_cup: Node3D) -> void:
+	_attempt_active = false
+	_clear_score_candidate()
+
+	if was_score and scored_cup != null and is_instance_valid(scored_cup):
 		_computer_score += 1
-		_remove_player_cup(target_cup)
-		_last_computer_shot_summary = "Computer hit a cup."
+		_remove_player_cup(scored_cup)
+		_last_computer_shot_summary = "Computer hit %s." % scored_cup.name
 		print("[ClassicMatch] Computer scored. Player cups remaining: %d." % _player_cups.size())
 	else:
 		_last_computer_shot_summary = "Computer missed."
@@ -308,7 +371,7 @@ func _resolve_computer_shot() -> void:
 		return
 
 	if _shots_remaining > 0:
-		_computer_shot_countdown = computer_shot_delay
+		_reset_countdown = scored_reset_delay if was_score else reset_delay
 	else:
 		_computer_shot_countdown = -1.0
 		_schedule_turn(TURN_PLAYER, turn_transition_delay)
@@ -367,7 +430,62 @@ func _select_computer_target_cup() -> Node3D:
 	if _player_cups.is_empty():
 		return null
 
-	return _player_cups[_rng.randi_range(0, _player_cups.size() - 1)]
+	match computer_target_heuristic:
+		COMPUTER_TARGET_MOST_CENTRAL:
+			return _select_most_central_cup(_player_cups)
+		_:
+			return _select_most_central_cup(_player_cups)
+
+
+func _select_most_central_cup(cups: Array[Node3D]) -> Node3D:
+	var rack_center := Vector3.ZERO
+	for cup in cups:
+		rack_center += cup.global_position
+	rack_center /= float(cups.size())
+
+	var selected_cup := cups[0]
+	var selected_distance := INF
+	var selected_index := RACK_SIZE
+	for cup in cups:
+		var offset := cup.global_position - rack_center
+		var distance := Vector2(offset.x, offset.z).length_squared()
+		var cup_index := int(cup.get_meta("cup_index", RACK_SIZE))
+		if distance < selected_distance or (is_equal_approx(distance, selected_distance) and cup_index < selected_index):
+			selected_cup = cup
+			selected_distance = distance
+			selected_index = cup_index
+
+	return selected_cup
+
+
+func _get_computer_aim_position(target_cup: Node3D) -> Vector3:
+	var aim_position := target_cup.global_position + Vector3.UP * computer_aim_height_offset
+	if computer_accuracy_error_radius <= 0.0:
+		return aim_position
+
+	var miss_angle := _rng.randf_range(0.0, TAU)
+	var miss_distance := sqrt(_rng.randf()) * computer_accuracy_error_radius
+	aim_position.x += cos(miss_angle) * miss_distance
+	aim_position.z += sin(miss_angle) * miss_distance
+	return aim_position
+
+
+func _calculate_computer_throw_velocity(start_position: Vector3, target_position: Vector3) -> Vector3:
+	var gravity_scale := _ball.flight_gravity_scale if _ball != null else 1.0
+	var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)) * gravity_scale
+	gravity = maxf(gravity, 0.01)
+	var peak_y := maxf(start_position.y, target_position.y) + maxf(0.01, computer_throw_arc_height)
+	var vertical_speed := sqrt(2.0 * gravity * maxf(0.01, peak_y - start_position.y))
+	var time_up := vertical_speed / gravity
+	var time_down := sqrt(2.0 * maxf(0.01, peak_y - target_position.y) / gravity)
+	var travel_time := maxf(0.1, time_up + time_down)
+	var horizontal_delta := target_position - start_position
+	horizontal_delta.y = 0.0
+	return Vector3(
+		horizontal_delta.x / travel_time,
+		vertical_speed,
+		horizontal_delta.z / travel_time
+	)
 
 
 func _get_valid_cups(cups: Array[Node3D]) -> Array[Node3D]:
@@ -397,6 +515,25 @@ func _is_player_miss() -> bool:
 	return false
 
 
+func _is_computer_miss() -> bool:
+	var position := _ball.global_position
+	if position.y < miss_height:
+		return true
+	if absf(position.x) > out_of_bounds_x:
+		return true
+
+	var half_length := table_length_meters * 0.5
+	if position.z < table_center_z - half_length - out_of_bounds_padding_z:
+		return true
+	if position.z > table_center_z + half_length + out_of_bounds_padding_z:
+		return true
+	if _attempt_elapsed >= max_attempt_seconds:
+		return true
+	if _attempt_elapsed >= settled_after_seconds and _is_ball_settled() and _get_ball_resting_cup(_player_cup_parent) == null:
+		return true
+	return false
+
+
 func _is_ball_settled() -> bool:
 	return (
 		_ball.linear_velocity.length() <= settled_speed
@@ -411,6 +548,16 @@ func _reset_ball_for_player() -> void:
 	_clear_score_candidate()
 	_ball.reset_to_transform(_get_player_ball_spawn_transform(), true)
 	_set_ball_grabbable(_active_turn == TURN_PLAYER and _shots_remaining > 0 and not _game_over)
+	_update_status_label()
+
+
+func _reset_ball_for_computer() -> void:
+	_reset_countdown = -1.0
+	_attempt_active = false
+	_attempt_elapsed = 0.0
+	_clear_score_candidate()
+	_ball.reset_to_transform(_get_computer_ball_spawn_transform(), true)
+	_computer_shot_countdown = computer_shot_delay if _shots_remaining > 0 and not _game_over else -1.0
 	_update_status_label()
 
 
