@@ -6,6 +6,11 @@
 [ext_resource type="Script" path="res://scripts/network_match_state.gd" id="4_match"]
 [ext_resource type="PackedScene" path="res://scenes/network_hand_avatar.tscn" id="5_hand"]
 [ext_resource type="Script" path="res://scripts/photon_lobby_ui.gd" id="6_lobby"]
+[ext_resource type="Script" path="res://scripts/hand_grabber.gd" id="7_handgrab"]
+[ext_resource type="Script" path="res://scripts/networked_pong_ball.gd" id="8_ball"]
+[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="9_cup_visual"]
+[ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="10_cup_collision"]
+[ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="11_surface"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.42, 0.48, 0.54, 1)
@@ -45,24 +50,38 @@ roughness = 0.65
 albedo_color = Color(1, 0.72, 0.28, 1)
 roughness = 0.65
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_PingPongBall"]
+albedo_color = Color(1, 0.96, 0.82, 1)
+roughness = 0.72
+
 [sub_resource type="SphereMesh" id="SphereMesh_HandMarker"]
 radius = 0.035
 height = 0.07
 
+[sub_resource type="SphereMesh" id="SphereMesh_PingPongBall"]
+radius = 0.02
+height = 0.04
+
 [sub_resource type="BoxMesh" id="BoxMesh_Floor"]
-size = Vector3(4, 0.05, 4)
+size = Vector3(4, 0.05, 5)
 
 [sub_resource type="BoxMesh" id="BoxMesh_Table"]
-size = Vector3(1.2, 0.06, 0.72)
+size = Vector3(1.2, 0.06, 2.7432)
 
 [sub_resource type="BoxMesh" id="BoxMesh_SpawnMarker"]
-size = Vector3(0.25, 0.02, 0.25)
+size = Vector3(0.28, 0.02, 0.28)
+
+[sub_resource type="SphereShape3D" id="SphereShape_GrabArea"]
+radius = 0.09
+
+[sub_resource type="SphereShape3D" id="SphereShape_PingPongBall"]
+radius = 0.02
 
 [sub_resource type="BoxShape3D" id="BoxShape_Floor"]
-size = Vector3(4, 0.05, 4)
+size = Vector3(4, 0.05, 5)
 
 [sub_resource type="BoxShape3D" id="BoxShape_Table"]
-size = Vector3(1.2, 0.06, 0.72)
+size = Vector3(1.2, 0.06, 2.7432)
 
 [sub_resource type="LabelSettings" id="LabelSettings_Status"]
 font_size = 24
@@ -90,23 +109,45 @@ current = true
 [node name="LeftController" type="XRController3D" parent="XROrigin3D"]
 unique_name_in_owner = true
 tracker = &"left_hand"
+script = ExtResource("7_handgrab")
+hand_name = "Left hand"
 
 [node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/LeftController"]
 mesh = SubResource("SphereMesh_HandMarker")
 material_override = SubResource("StandardMaterial3D_LeftHand")
 
+[node name="GrabArea" type="Area3D" parent="XROrigin3D/LeftController"]
+collision_layer = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="XROrigin3D/LeftController/GrabArea"]
+shape = SubResource("SphereShape_GrabArea")
+
 [node name="RightController" type="XRController3D" parent="XROrigin3D"]
 unique_name_in_owner = true
 tracker = &"right_hand"
+script = ExtResource("7_handgrab")
+hand_name = "Right hand"
 
 [node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/RightController"]
 mesh = SubResource("SphereMesh_HandMarker")
 material_override = SubResource("StandardMaterial3D_RightHand")
 
+[node name="GrabArea" type="Area3D" parent="XROrigin3D/RightController"]
+collision_layer = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="XROrigin3D/RightController/GrabArea"]
+shape = SubResource("SphereShape_GrabArea")
+
 [node name="PhysicsSurfaces" type="Node3D" parent="."]
 
 [node name="Floor" type="StaticBody3D" parent="PhysicsSurfaces"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1.35)
+script = ExtResource("11_surface")
+surface_id = &"floor"
+bounce = 0.62
+friction = 0.82
+absorbs_ball_bounce = true
+rough = true
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Floor"]
 mesh = SubResource("BoxMesh_Floor")
@@ -117,6 +158,10 @@ shape = SubResource("BoxShape_Floor")
 
 [node name="Table" type="StaticBody3D" parent="PhysicsSurfaces"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -1.35)
+script = ExtResource("11_surface")
+surface_id = &"table"
+bounce = 0.04
+friction = 0.28
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Table"]
 mesh = SubResource("BoxMesh_Table")
@@ -125,23 +170,63 @@ material_override = SubResource("StandardMaterial3D_Table")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Table"]
 shape = SubResource("BoxShape_Table")
 
+[node name="CupRacks" type="Node3D" parent="."]
+
+[node name="PlayerOneCupRack" type="Node3D" parent="CupRacks"]
+
+[node name="PlayerTwoCupRack" type="Node3D" parent="CupRacks"]
+
+[node name="Grabbables" type="Node3D" parent="."]
+
+[node name="NetworkedBall" type="RigidBody3D" parent="Grabbables" groups=["game_ball", "grabbable"]]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 1.18, -3.0416)
+mass = 0.0027
+gravity_scale = 0.0
+script = ExtResource("8_ball")
+
+[node name="FusionSharedReplicator" type="FusionSharedReplicator" parent="Grabbables/NetworkedBall"]
+root_path = NodePath("..")
+owner_mode = 2
+update_interval = 1
+object_interpolation_time = 0.04
+root_replication_mode = 1
+root_global_coordinates = true
+root_interpolation_mode = 2
+root_teleport_threshold = 0.75
+root_rotation_teleport_threshold = 90.0
+sync_sleeping = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Grabbables/NetworkedBall"]
+mesh = SubResource("SphereMesh_PingPongBall")
+material_override = SubResource("StandardMaterial3D_PingPongBall")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Grabbables/NetworkedBall"]
+shape = SubResource("SphereShape_PingPongBall")
+
 [node name="SpawnMarkers" type="Node3D" parent="."]
 
 [node name="PlayerOneMarker" type="MeshInstance3D" parent="SpawnMarkers"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7, 0.01, -0.15)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0.58)
 mesh = SubResource("BoxMesh_SpawnMarker")
 material_override = SubResource("StandardMaterial3D_SpawnA")
 
 [node name="PlayerTwoMarker" type="MeshInstance3D" parent="SpawnMarkers"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7, 0.01, -0.15)
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0.01, -3.32)
 mesh = SubResource("BoxMesh_SpawnMarker")
 material_override = SubResource("StandardMaterial3D_SpawnB")
 
 [node name="StatusLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, 0, 1.45, -1.05)
+transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, 0, 1.58, -1.35)
 pixel_size = 0.0022
 billboard = 1
 text = "Online Arena"
+label_settings = SubResource("LabelSettings_Status")
+
+[node name="ScoreLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, -0.82, 1.18, -1.35)
+pixel_size = 0.002
+billboard = 1
+text = "Waiting for second player"
 label_settings = SubResource("LabelSettings_Status")
 
 [node name="LobbyUi" type="Node3D" parent="."]
@@ -168,12 +253,19 @@ spawnable_scenes = [ExtResource("5_hand")]
 [node name="NetworkMatchState" type="Node" parent="Network"]
 script = ExtResource("4_match")
 session_path = NodePath("../PhotonSession")
+ball_path = NodePath("../../Grabbables/NetworkedBall")
+player_one_cup_parent_path = NodePath("../../CupRacks/PlayerOneCupRack")
+player_two_cup_parent_path = NodePath("../../CupRacks/PlayerTwoCupRack")
+score_label_path = NodePath("../../ScoreLabel")
+cup_visual_scene = ExtResource("9_cup_visual")
+cup_collision_scene = ExtResource("10_cup_collision")
 
 [node name="NetworkedArena" type="Node" parent="Network"]
 script = ExtResource("3_arena")
 session_path = NodePath("../PhotonSession")
 hand_spawner_path = NodePath("../HandSpawner")
 match_state_path = NodePath("../NetworkMatchState")
+xr_origin_path = NodePath("../../XROrigin3D")
 left_controller_path = NodePath("../../XROrigin3D/LeftController")
 right_controller_path = NodePath("../../XROrigin3D/RightController")
 status_label_path = NodePath("../../StatusLabel")

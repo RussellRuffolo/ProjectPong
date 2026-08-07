@@ -145,6 +145,36 @@ func register_current_scene() -> void:
 	_fusion.call("register_current_scene")
 
 
+func register_broadcast_receiver(receiver: Node) -> void:
+	if _fusion == null or receiver == null or not _fusion.has_method("register_broadcast_receiver"):
+		return
+
+	_fusion.call("register_broadcast_receiver", receiver)
+
+
+func unregister_broadcast_receiver(receiver: Node) -> void:
+	if _fusion == null or receiver == null or not _fusion.has_method("unregister_broadcast_receiver"):
+		return
+
+	_fusion.call("unregister_broadcast_receiver", receiver)
+
+
+func broadcast_rpc(receiver: Object, method_name: StringName, args: Array = []) -> bool:
+	if _fusion == null or receiver == null or not _fusion.has_method("rpc"):
+		return false
+	if not bool(_fusion.call("is_in_room")):
+		return false
+
+	var rpc_args: Array = [Callable(receiver, method_name)]
+	rpc_args.append_array(args)
+	_fusion.callv("rpc", rpc_args)
+	return true
+
+
+func is_master_client() -> bool:
+	return _fusion != null and bool(_fusion.call("is_master_client"))
+
+
 func get_status() -> String:
 	return _last_status
 
