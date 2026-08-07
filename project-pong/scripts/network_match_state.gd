@@ -166,6 +166,7 @@ func _on_room_joined(_room_name: String, local_player_id: int) -> void:
 		_session.call("register_broadcast_receiver", self)
 
 	_refresh_players()
+	_update_ball_turn_configuration()
 
 
 func _on_player_joined(_player_id: int, _player_name: String) -> void:
@@ -203,6 +204,7 @@ func _refresh_players() -> void:
 		_publish_waiting_snapshot()
 	else:
 		_update_score_label()
+		_update_ball_turn_configuration()
 		match_state_changed.emit(get_status_text())
 
 
@@ -295,6 +297,7 @@ func _apply_match_snapshot(snapshot: Dictionary) -> void:
 		_update_ball_turn_configuration()
 
 	_update_score_label()
+	_update_ball_turn_configuration()
 	match_state_changed.emit(get_status_text())
 	print("[MatchState] Applied match snapshot v%d: %s" % [version, get_status_text().replace("\n", " | ")])
 

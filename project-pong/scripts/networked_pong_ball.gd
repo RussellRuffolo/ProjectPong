@@ -12,6 +12,7 @@ var _active_player_id := 0
 var _match_active := false
 var _turn_shots_remaining := 0
 var _authority_player_id := 0
+var _last_denial_log_msec := 0
 
 
 func _ready() -> void:
@@ -29,8 +30,16 @@ func configure_turn(local_player_id: int, active_player_id: int, match_active: b
 		_request_authority()
 
 
+func prepare_grab_check(_grabber: Node3D) -> void:
+	if _match_active and _local_player_id > 0 and _local_player_id == _active_player_id:
+		_request_authority()
+
+
 func can_be_grabbed_by(_grabber: Node3D) -> bool:
-	return can_local_player_control()
+	var can_grab := can_local_player_control()
+	if not can_grab:
+		_log_grab_denied()
+	return can_grab
 
 
 func can_local_player_control() -> bool:
@@ -88,6 +97,21 @@ func _request_authority() -> void:
 		return
 
 	_replicator.call("want_authority", true, authority_send_interval)
+
+
+func _log_grab_denied() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_denial_log_msec < 1000:
+		return
+
+	_last_denial_log_msec = now
+	print("[NetworkBall] Grab denied. local=%d active=%d match=%s shots=%d authority_owner=%d" % [
+		_local_player_id,
+		_active_player_id,
+		_match_active,
+		_turn_shots_remaining,
+		_authority_player_id,
+	])
 
 
 func _refresh_authority_owner() -> void:

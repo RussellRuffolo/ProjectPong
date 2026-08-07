@@ -46,6 +46,7 @@ func _try_grab_closest() -> void:
 	var closest := _get_closest_grabbable()
 	if closest == null:
 		return
+	_prepare_body_for_grab_check(closest)
 	if not _can_grab_body(closest):
 		return
 
@@ -96,6 +97,7 @@ func _get_closest_grabbable() -> RigidBody3D:
 		var grabbable_body := grabbable as RigidBody3D
 		if grabbable_body == null:
 			continue
+		_prepare_body_for_grab_check(grabbable_body)
 		if not _can_grab_body(grabbable_body):
 			continue
 
@@ -112,6 +114,11 @@ func _can_grab_body(body: RigidBody3D) -> bool:
 		return bool(body.call("can_be_grabbed_by", self))
 
 	return true
+
+
+func _prepare_body_for_grab_check(body: RigidBody3D) -> void:
+	if body.has_method("prepare_grab_check"):
+		body.call("prepare_grab_check", self)
 
 
 func _on_grab_area_body_entered(body: Node3D) -> void:

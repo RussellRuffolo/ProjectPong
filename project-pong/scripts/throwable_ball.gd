@@ -13,6 +13,7 @@ signal released(grabber: Node3D, release_linear_velocity: Vector3, release_angul
 @export var flight_angular_damp := 0.08
 @export var release_spin := Vector3(0.0, 0.0, 8.0)
 @export var starts_suspended := true
+@export var can_be_grabbed := true
 
 
 func _ready() -> void:
@@ -52,6 +53,14 @@ func reset_to_transform(reset_transform: Transform3D, suspend_physics := true) -
 		_set_held_physics()
 	else:
 		_set_flight_physics()
+
+
+func set_grabbable(is_grabbable: bool) -> void:
+	can_be_grabbed = is_grabbable
+
+
+func can_be_grabbed_by(_grabber: Node3D) -> bool:
+	return can_be_grabbed
 
 
 func _create_ball_material() -> PhysicsMaterial:

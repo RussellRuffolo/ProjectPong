@@ -135,7 +135,7 @@ target_scene_path = "res://scenes/main.tscn"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0.04)
 script = ExtResource("3_button")
 label_text = "Classic Match"
-selectable = false
+target_scene_path = "res://scenes/classic_match.tscn"
 
 [node name="HouseRules" type="Area3D" parent="MenuPanel/Buttons"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.32, 0.04)

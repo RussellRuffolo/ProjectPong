@@ -1,0 +1,221 @@
+[gd_scene load_steps=29 format=3]
+
+[ext_resource type="Script" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
+[ext_resource type="Script" path="res://scripts/hand_grabber.gd" id="2_handgrab"]
+[ext_resource type="Script" path="res://scripts/throwable_ball.gd" id="3_ball"]
+[ext_resource type="Script" path="res://scripts/classic_match_game.gd" id="4_game"]
+[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="5_cup_visual"]
+[ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="6_cup_collision"]
+[ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="7_surface"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
+sky_horizon_color = Color(0.46, 0.5, 0.55, 1)
+ground_horizon_color = Color(0.22, 0.24, 0.27, 1)
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("ProceduralSkyMaterial_1")
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+ambient_light_source = 2
+ambient_light_color = Color(0.7, 0.72, 0.76, 1)
+ambient_light_energy = 0.6
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_XAxis"]
+albedo_color = Color(0.9, 0.12, 0.08, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ZAxis"]
+albedo_color = Color(0.08, 0.25, 0.95, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_LeftHand"]
+albedo_color = Color(0.2, 0.85, 1, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_RightHand"]
+albedo_color = Color(1, 0.42, 0.28, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_PingPongBall"]
+albedo_color = Color(1, 0.96, 0.82, 1)
+roughness = 0.72
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Floor"]
+albedo_color = Color(0.18, 0.2, 0.19, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Table"]
+albedo_color = Color(0.04, 0.43, 0.34, 1)
+roughness = 0.72
+
+[sub_resource type="LabelSettings" id="LabelSettings_Status"]
+font_size = 28
+font_color = Color(1, 0.96, 0.84, 1)
+outline_size = 5
+outline_color = Color(0.03, 0.035, 0.04, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_XAxis"]
+size = Vector3(1, 0.02, 0.02)
+
+[sub_resource type="BoxMesh" id="BoxMesh_ZAxis"]
+size = Vector3(0.02, 0.02, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_Floor"]
+size = Vector3(4, 0.05, 4.8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_Table"]
+size = Vector3(0.76, 0.06, 2.7432)
+
+[sub_resource type="SphereMesh" id="SphereMesh_HandMarker"]
+radius = 0.035
+height = 0.07
+
+[sub_resource type="SphereMesh" id="SphereMesh_PingPongBall"]
+radius = 0.02
+height = 0.04
+
+[sub_resource type="SphereShape3D" id="SphereShape_GrabArea"]
+radius = 0.09
+
+[sub_resource type="SphereShape3D" id="SphereShape_PingPongBall"]
+radius = 0.02
+
+[sub_resource type="BoxShape3D" id="BoxShape_Floor"]
+size = Vector3(4, 0.05, 4.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape_Table"]
+size = Vector3(0.76, 0.06, 2.7432)
+
+[node name="ClassicMatchRoot" type="Node3D"]
+script = ExtResource("1_xrboot")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.353553, 0.612372, 0, 0.866025, 0.5, -0.707107, -0.353553, 0.612372, 0, 3, 0)
+light_energy = 1.2
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+unique_name_in_owner = true
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+current = true
+
+[node name="LeftController" type="XRController3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+tracker = &"left_hand"
+script = ExtResource("2_handgrab")
+hand_name = "Left hand"
+
+[node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/LeftController"]
+mesh = SubResource("SphereMesh_HandMarker")
+material_override = SubResource("StandardMaterial3D_LeftHand")
+
+[node name="GrabArea" type="Area3D" parent="XROrigin3D/LeftController"]
+collision_layer = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="XROrigin3D/LeftController/GrabArea"]
+shape = SubResource("SphereShape_GrabArea")
+
+[node name="RightController" type="XRController3D" parent="XROrigin3D"]
+unique_name_in_owner = true
+tracker = &"right_hand"
+script = ExtResource("2_handgrab")
+hand_name = "Right hand"
+
+[node name="HandMarker" type="MeshInstance3D" parent="XROrigin3D/RightController"]
+mesh = SubResource("SphereMesh_HandMarker")
+material_override = SubResource("StandardMaterial3D_RightHand")
+
+[node name="GrabArea" type="Area3D" parent="XROrigin3D/RightController"]
+collision_layer = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="XROrigin3D/RightController/GrabArea"]
+shape = SubResource("SphereShape_GrabArea")
+
+[node name="PhysicsSurfaces" type="Node3D" parent="."]
+
+[node name="BounceFloor" type="StaticBody3D" parent="PhysicsSurfaces"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1.56)
+script = ExtResource("7_surface")
+surface_id = &"floor"
+bounce = 0.62
+friction = 0.82
+absorbs_ball_bounce = true
+rough = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/BounceFloor"]
+mesh = SubResource("BoxMesh_Floor")
+material_override = SubResource("StandardMaterial3D_Floor")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/BounceFloor"]
+shape = SubResource("BoxShape_Floor")
+
+[node name="BounceTable" type="StaticBody3D" parent="PhysicsSurfaces"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -1.56)
+script = ExtResource("7_surface")
+surface_id = &"table"
+bounce = 0.04
+friction = 0.28
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/BounceTable"]
+mesh = SubResource("BoxMesh_Table")
+material_override = SubResource("StandardMaterial3D_Table")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/BounceTable"]
+shape = SubResource("BoxShape_Table")
+
+[node name="PlayerCupRack" type="Node3D" parent="."]
+
+[node name="ComputerCupRack" type="Node3D" parent="."]
+
+[node name="Grabbables" type="Node3D" parent="."]
+
+[node name="MatchPingPongBall" type="RigidBody3D" parent="Grabbables" groups=["game_ball", "grabbable"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.18, 0.16)
+mass = 0.0027
+gravity_scale = 0.0
+script = ExtResource("3_ball")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Grabbables/MatchPingPongBall"]
+mesh = SubResource("SphereMesh_PingPongBall")
+material_override = SubResource("StandardMaterial3D_PingPongBall")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Grabbables/MatchPingPongBall"]
+shape = SubResource("SphereShape_PingPongBall")
+
+[node name="StatusLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, -0.48, 1.45, -1.1)
+pixel_size = 0.0025
+billboard = 1
+text = "Your turn
+Shots left: 2
+You: 0 / 10  CPU: 0 / 10"
+label_settings = SubResource("LabelSettings_Status")
+
+[node name="ClassicMatchGame" type="Node" parent="."]
+script = ExtResource("4_game")
+ball_path = NodePath("../Grabbables/MatchPingPongBall")
+player_cup_parent_path = NodePath("../PlayerCupRack")
+computer_cup_parent_path = NodePath("../ComputerCupRack")
+status_label_path = NodePath("../StatusLabel")
+cup_visual_scene = ExtResource("5_cup_visual")
+cup_collision_scene = ExtResource("6_cup_collision")
+table_center_z = -1.56
+table_length_meters = 2.7432
+
+[node name="OriginHelpers" type="Node3D" parent="."]
+
+[node name="XAxis" type="MeshInstance3D" parent="OriginHelpers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.01, 0)
+mesh = SubResource("BoxMesh_XAxis")
+material_override = SubResource("StandardMaterial3D_XAxis")
+
+[node name="ZAxis" type="MeshInstance3D" parent="OriginHelpers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, -0.5)
+mesh = SubResource("BoxMesh_ZAxis")
+material_override = SubResource("StandardMaterial3D_ZAxis")
