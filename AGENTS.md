@@ -105,6 +105,8 @@ The basic multiplayer match is available through networked room creation/join. M
 
 House Rules should be implemented as composable rule modules or data-driven rule definitions. A match should be able to enable any subset of rules, and each rule should make its gameplay effects explicit enough to test independently.
 
+Before implementing House Rules, read `HouseRules.md` at the repository root. It documents the intended shared rules architecture, menu/persistence behavior, multiplayer authority model, and initial rule definitions.
+
 Computer player shot logic should be separated into target selection and throw execution. Target selection should support multiple heuristics, such as closest cup or most central cup, while throw execution should apply an accuracy modifier so different computer players can feel distinct without changing core physics or scoring code.
 
 ## Repository Expectations

@@ -52,6 +52,15 @@ func mark_scored() -> void:
 	_has_scored = true
 
 
+func is_scored() -> bool:
+	return _has_scored
+
+
+func get_top_center_position() -> Vector3:
+	var local_top_center := Vector3(0.0,.25 , 0.0)
+	return global_transform * local_top_center
+
+
 func _add_visual() -> void:
 	if visual_scene == null:
 		push_warning("[Cup] No cup visual scene assigned.")

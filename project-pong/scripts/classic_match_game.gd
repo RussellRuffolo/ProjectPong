@@ -38,7 +38,7 @@ const COMPUTER_TARGET_MOST_CENTRAL := "most_central"
 @export_enum("most_central") var computer_target_heuristic := COMPUTER_TARGET_MOST_CENTRAL
 @export_range(0.0, 0.35, 0.005) var computer_accuracy_error_radius := 0 # 0.055
 @export var computer_throw_arc_height := 0.42
-@export var computer_aim_height_offset := 0.095
+@export var computer_aim_top_clearance := 0.02
 @export var return_to_menu_delay := 3.0
 @export var menu_scene_path := "res://scenes/menu.tscn"
 
@@ -148,6 +148,7 @@ func _build_rack(
 				row_z
 			)
 			cup.set_meta("cup_index", cup_index)
+			cup.set_meta("is_scored", false)
 			parent.add_child(cup)
 			rack.append(cup)
 			cup_index += 1
@@ -391,6 +392,7 @@ func _mark_cup_for_removal(cup: Node3D) -> void:
 	if cup == null or not is_instance_valid(cup):
 		return
 
+	cup.set_meta("is_scored", true)
 	if cup.has_method("mark_scored"):
 		cup.call("mark_scored")
 	_pending_cup_removals.append({
@@ -426,7 +428,7 @@ func _get_ball_resting_cup(parent: Node3D) -> Node3D:
 
 
 func _select_computer_target_cup() -> Node3D:
-	_player_cups = _get_valid_cups(_player_cups)
+	_player_cups = _get_available_cups(_player_cups)
 	if _player_cups.is_empty():
 		return null
 
@@ -438,15 +440,19 @@ func _select_computer_target_cup() -> Node3D:
 
 
 func _select_most_central_cup(cups: Array[Node3D]) -> Node3D:
-	var rack_center := Vector3.ZERO
-	for cup in cups:
-		rack_center += cup.global_position
-	rack_center /= float(cups.size())
+	var available_cups := _get_available_cups(cups)
+	if available_cups.is_empty():
+		return null
 
-	var selected_cup := cups[0]
+	var rack_center := Vector3.ZERO
+	for cup in available_cups:
+		rack_center += cup.global_position
+	rack_center /= float(available_cups.size())
+
+	var selected_cup := available_cups[0]
 	var selected_distance := INF
 	var selected_index := RACK_SIZE
-	for cup in cups:
+	for cup in available_cups:
 		var offset := cup.global_position - rack_center
 		var distance := Vector2(offset.x, offset.z).length_squared()
 		var cup_index := int(cup.get_meta("cup_index", RACK_SIZE))
@@ -459,7 +465,7 @@ func _select_most_central_cup(cups: Array[Node3D]) -> Node3D:
 
 
 func _get_computer_aim_position(target_cup: Node3D) -> Vector3:
-	var aim_position := target_cup.global_position + Vector3.UP * computer_aim_height_offset
+	var aim_position := _get_cup_top_center_position(target_cup) + Vector3.UP * computer_aim_top_clearance
 	if computer_accuracy_error_radius <= 0.0:
 		return aim_position
 
@@ -468,6 +474,14 @@ func _get_computer_aim_position(target_cup: Node3D) -> Vector3:
 	aim_position.x += cos(miss_angle) * miss_distance
 	aim_position.z += sin(miss_angle) * miss_distance
 	return aim_position
+
+
+func _get_cup_top_center_position(cup: Node3D) -> Vector3:
+	if cup.has_method("get_top_center_position"):
+		var top_position = cup.call("get_top_center_position")
+		if top_position is Vector3:
+			return top_position
+	return cup.global_position
 
 
 func _calculate_computer_throw_velocity(start_position: Vector3, target_position: Vector3) -> Vector3:
@@ -488,12 +502,22 @@ func _calculate_computer_throw_velocity(start_position: Vector3, target_position
 	)
 
 
-func _get_valid_cups(cups: Array[Node3D]) -> Array[Node3D]:
-	var valid_cups: Array[Node3D] = []
+func _get_available_cups(cups: Array[Node3D]) -> Array[Node3D]:
+	var available_cups: Array[Node3D] = []
 	for cup in cups:
-		if cup != null and is_instance_valid(cup) and not cup.is_queued_for_deletion():
-			valid_cups.append(cup)
-	return valid_cups
+		if _is_available_cup(cup):
+			available_cups.append(cup)
+	return available_cups
+
+
+func _is_available_cup(cup: Node3D) -> bool:
+	if cup == null or not is_instance_valid(cup) or cup.is_queued_for_deletion():
+		return false
+	if bool(cup.get_meta("is_scored", false)):
+		return false
+	if cup.has_method("is_scored") and bool(cup.call("is_scored")):
+		return false
+	return true
 
 
 func _is_player_miss() -> bool:
