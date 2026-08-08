@@ -56,14 +56,17 @@ func update(delta: float, resolver := Callable()) -> void:
 
 
 func _resolve_cup(item: Dictionary, resolver: Callable) -> Node3D:
-	var direct_cup := item.get("cup", null) as Node3D
-	if direct_cup != null:
+	var direct_cup = item.get("cup", null)
+	if direct_cup != null and is_instance_valid(direct_cup) and direct_cup is Node3D:
 		return direct_cup
 
 	if not resolver.is_valid():
 		return null
 
-	return resolver.call(int(item.get("slot", 0)), int(item.get("cup_index", -1))) as Node3D
+	var resolved_cup = resolver.call(int(item.get("slot", 0)), int(item.get("cup_index", -1)))
+	if resolved_cup != null and is_instance_valid(resolved_cup) and resolved_cup is Node3D:
+		return resolved_cup
+	return null
 
 
 func _has_cup(cup: Node3D) -> bool:
