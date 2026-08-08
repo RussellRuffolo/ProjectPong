@@ -4,6 +4,7 @@ class_name GamemodeMenu
 @export var left_controller_path: NodePath
 @export var right_controller_path: NodePath
 @export var button_parent_path: NodePath
+@export var house_rules_panel_path: NodePath
 @export var pointer_distance := 3.0
 @export_range(0.0, 1.0, 0.01) var trigger_threshold := 0.55
 
@@ -11,6 +12,7 @@ var _left_controller: XRController3D
 var _right_controller: XRController3D
 var _buttons: Array[Area3D] = []
 var _hovered_button: Area3D
+var _house_rules_panel: Node
 var _left_select_was_pressed := false
 var _right_select_was_pressed := false
 
@@ -18,6 +20,7 @@ var _right_select_was_pressed := false
 func _ready() -> void:
 	_left_controller = get_node_or_null(left_controller_path) as XRController3D
 	_right_controller = get_node_or_null(right_controller_path) as XRController3D
+	_house_rules_panel = get_node_or_null(house_rules_panel_path)
 	_collect_buttons()
 	print("[Menu] Gamemode menu ready with %d options." % _buttons.size())
 
@@ -33,8 +36,10 @@ func _physics_process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_accept") and _buttons.size() > 0:
-		_buttons[0].call("activate")
+	if event.is_action_pressed("ui_accept"):
+		var default_button := _get_first_interactive_button()
+		if default_button != null:
+			default_button.call("activate")
 
 
 func _collect_buttons() -> void:
@@ -43,13 +48,18 @@ func _collect_buttons() -> void:
 		push_error("[Menu] Gamemode menu could not find its button parent.")
 		return
 
-	for child in button_parent.get_children():
-		var menu_button := child as Area3D
-		if menu_button == null or not menu_button.has_method("activate") or not menu_button.has_signal("pressed"):
-			continue
+	_collect_buttons_recursive(button_parent)
 
-		menu_button.pressed.connect(_on_menu_button_pressed)
-		_buttons.append(menu_button)
+
+func _collect_buttons_recursive(root: Node) -> void:
+	for child in root.get_children():
+		var menu_button := child as Area3D
+		if menu_button != null and menu_button.has_method("activate") and menu_button.has_signal("pressed"):
+			if bool(menu_button.get_meta("menu_handles_pressed", true)):
+				menu_button.pressed.connect(_on_menu_button_pressed)
+			_buttons.append(menu_button)
+
+		_collect_buttons_recursive(child)
 
 
 func _get_pointed_button(controller: XRController3D) -> Area3D:
@@ -69,6 +79,8 @@ func _get_pointed_button(controller: XRController3D) -> Area3D:
 
 	var menu_button := result.get("collider") as Area3D
 	if menu_button == null or not _buttons.has(menu_button):
+		return null
+	if not _is_button_interactive(menu_button):
 		return null
 
 	return menu_button
@@ -104,6 +116,11 @@ func _set_hovered_button(next_hover: Area3D) -> void:
 func _on_menu_button_pressed(menu_button: Area3D) -> void:
 	var label_text: String = menu_button.get("label_text")
 	var target_scene_path: String = menu_button.get("target_scene_path")
+	var command_id: String = menu_button.get("command_id")
+
+	if command_id == "house_rules":
+		_open_house_rules_panel()
+		return
 
 	if target_scene_path.is_empty():
 		print("[Menu] %s is a placeholder option." % label_text)
@@ -113,3 +130,30 @@ func _on_menu_button_pressed(menu_button: Area3D) -> void:
 	var error := get_tree().change_scene_to_file(target_scene_path)
 	if error != OK:
 		push_error("[Menu] Could not load %s. Error: %s." % [target_scene_path, error])
+
+
+func _open_house_rules_panel() -> void:
+	if _house_rules_panel == null or not _house_rules_panel.has_method("open_panel"):
+		push_warning("[Menu] House Rules panel is not configured.")
+		return
+
+	print("[Menu] Opening House Rules panel.")
+	_house_rules_panel.call("open_panel")
+
+
+func _get_first_interactive_button() -> Area3D:
+	for menu_button in _buttons:
+		if _is_button_interactive(menu_button):
+			return menu_button
+	return null
+
+
+func _is_button_interactive(menu_button: Area3D) -> bool:
+	if menu_button == null or not menu_button.is_visible_in_tree():
+		return false
+
+	var selectable_value: Variant = menu_button.get("selectable")
+	if selectable_value is bool and not bool(selectable_value):
+		return false
+
+	return true

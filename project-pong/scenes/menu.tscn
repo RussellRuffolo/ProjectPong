@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://3ebnhmrn7k6k" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
 [ext_resource type="Script" uid="uid://dm4dccaecsyb3" path="res://scripts/gamemode_menu.gd" id="2_menu"]
 [ext_resource type="Script" uid="uid://d3uo6h1pbcc7m" path="res://scripts/vr_menu_button.gd" id="3_button"]
+[ext_resource type="Script" path="res://scripts/house_rules/house_rules_menu_panel.gd" id="4_house_rules_panel"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.42, 0.46, 0.5, 1)
@@ -123,7 +124,7 @@ target_scene_path = "res://scenes/classic_match.tscn"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.32, 0.04)
 script = ExtResource("3_button")
 label_text = "House Rules"
-selectable = false
+command_id = "house_rules"
 
 [node name="OnlineArena" type="Area3D" parent="MenuPanel/Buttons" unique_id=1435481028]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.54, 0.04)
@@ -131,8 +132,14 @@ script = ExtResource("3_button")
 label_text = "Online Arena"
 target_scene_path = "res://scenes/networked_arena.tscn"
 
+[node name="HouseRulesPanel" type="Node3D" parent="MenuPanel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.055, 0.095)
+script = ExtResource("4_house_rules_panel")
+main_buttons_path = NodePath("../Buttons")
+
 [node name="GamemodeMenu" type="Node3D" parent="." unique_id=2012637404]
 script = ExtResource("2_menu")
 left_controller_path = NodePath("../XROrigin3D/LeftController")
 right_controller_path = NodePath("../XROrigin3D/RightController")
-button_parent_path = NodePath("../MenuPanel/Buttons")
+button_parent_path = NodePath("../MenuPanel")
+house_rules_panel_path = NodePath("../MenuPanel/HouseRulesPanel")

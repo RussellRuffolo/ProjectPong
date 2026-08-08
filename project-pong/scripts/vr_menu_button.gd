@@ -5,6 +5,7 @@ signal pressed(menu_button: VRMenuButton)
 
 @export var label_text := "Menu Button"
 @export var target_scene_path := ""
+@export var command_id := ""
 @export var selectable := true
 @export var size := Vector2(0.95, 0.18)
 @export var enabled_color := Color(0.08, 0.38, 0.32, 1.0)
@@ -16,6 +17,7 @@ signal pressed(menu_button: VRMenuButton)
 var _hovered := false
 var _panel_material: StandardMaterial3D
 var _label: Label3D
+var _collision_shape: CollisionShape3D
 
 
 func _ready() -> void:
@@ -62,12 +64,12 @@ func _build_visuals() -> void:
 	panel.material_override = _panel_material
 	add_child(panel)
 
-	var collision_shape := CollisionShape3D.new()
-	collision_shape.name = "CollisionShape3D"
+	_collision_shape = CollisionShape3D.new()
+	_collision_shape.name = "CollisionShape3D"
 	var box_shape := BoxShape3D.new()
 	box_shape.size = Vector3(size.x, size.y, 0.06)
-	collision_shape.shape = box_shape
-	add_child(collision_shape)
+	_collision_shape.shape = box_shape
+	add_child(_collision_shape)
 
 	_label = Label3D.new()
 	_label.name = "Label"
@@ -84,6 +86,9 @@ func _build_visuals() -> void:
 
 
 func _apply_visual_state() -> void:
+	if _collision_shape != null:
+		_collision_shape.disabled = not selectable
+
 	if _panel_material == null or _label == null:
 		return
 

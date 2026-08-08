@@ -13,6 +13,7 @@ const ShotScoreTrackerScript := preload("res://scripts/match/shot_score_tracker.
 const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_evaluator.gd")
 const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
 const ShotOutcomeScript := preload("res://scripts/match/shot_outcome.gd")
+const HouseRulesSettingsStoreScript := preload("res://scripts/house_rules/house_rules_settings_store.gd")
 
 const PHASE_WAITING := "waiting"
 const PHASE_PLAYING := "playing"
@@ -66,6 +67,7 @@ var _scored_cups_by_slot: Dictionary = {PLAYER_ONE_SLOT: [], PLAYER_TWO_SLOT: []
 var _rack_state_by_slot: Dictionary = {}
 var _scored_visual_keys: Dictionary = {}
 var _pending_cup_removals := CupRemovalQueueScript.new()
+var _house_rules_profile
 var _last_applied_version := 0
 var _next_state_version := 0
 var _shots_taken_this_turn := 0
@@ -82,6 +84,8 @@ func _ready() -> void:
 	_player_one_cup_parent = get_node_or_null(player_one_cup_parent_path) as Node3D
 	_player_two_cup_parent = get_node_or_null(player_two_cup_parent_path) as Node3D
 	_score_label = get_node_or_null(score_label_path) as Label3D
+	_house_rules_profile = HouseRulesSettingsStoreScript.load_profile()
+	print("[MatchState] Loaded House Rules profile %s." % _house_rules_profile.get_compact_ruleset_id())
 
 	_connect_ball()
 	_build_starting_racks()

@@ -10,6 +10,7 @@ const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_ev
 const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
 const ShotOutcomeScript := preload("res://scripts/match/shot_outcome.gd")
 const ComputerTargetSelectorScript := preload("res://scripts/match/computer_target_selector.gd")
+const HouseRulesSettingsStoreScript := preload("res://scripts/house_rules/house_rules_settings_store.gd")
 
 const TURN_PLAYER := 0
 const TURN_COMPUTER := 1
@@ -56,6 +57,7 @@ var _status_label: Label3D
 var _player_rack_state := RackStateScript.new()
 var _computer_rack_state := RackStateScript.new()
 var _pending_cup_removals := CupRemovalQueueScript.new()
+var _house_rules_profile
 var _score_tracker := ShotScoreTrackerScript.new()
 var _rng := RandomNumberGenerator.new()
 var _active_turn := TURN_PLAYER
@@ -87,6 +89,8 @@ func _ready() -> void:
 		push_error("[ClassicMatch] Could not find both cup rack parents.")
 		return
 
+	_house_rules_profile = HouseRulesSettingsStoreScript.load_profile()
+	print("[ClassicMatch] Loaded House Rules profile %s." % _house_rules_profile.get_compact_ruleset_id())
 	_rng.randomize()
 	_ball.released.connect(_on_ball_released)
 	_build_starting_racks()

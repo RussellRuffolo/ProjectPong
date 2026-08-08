@@ -9,6 +9,7 @@ const ShotScoreTrackerScript := preload("res://scripts/match/shot_score_tracker.
 const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_evaluator.gd")
 const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
 const ShotOutcomeScript := preload("res://scripts/match/shot_outcome.gd")
+const HouseRulesSettingsStoreScript := preload("res://scripts/house_rules/house_rules_settings_store.gd")
 
 @export var ball_path: NodePath
 @export var cup_parent_path: NodePath
@@ -39,6 +40,7 @@ var _reset_countdown := -1.0
 var _rack_state := RackStateScript.new()
 var _score_tracker := ShotScoreTrackerScript.new()
 var _pending_cup_removals := CupRemovalQueueScript.new()
+var _house_rules_profile
 var _score := 0
 var _cups_remaining := 0
 
@@ -55,6 +57,8 @@ func _ready() -> void:
 		push_error("[Game] Single-player game could not find the cup parent.")
 		return
 
+	_house_rules_profile = HouseRulesSettingsStoreScript.load_profile()
+	print("[Game] Loaded House Rules profile %s." % _house_rules_profile.get_compact_ruleset_id())
 	_ball_start_transform = _ball.global_transform
 	_ball.released.connect(_on_ball_released)
 	_build_starting_rack()
