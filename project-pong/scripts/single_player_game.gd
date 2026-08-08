@@ -8,8 +8,10 @@ const ShotPhysicsScript := preload("res://scripts/match/shot_physics.gd")
 const ShotScoreTrackerScript := preload("res://scripts/match/shot_score_tracker.gd")
 const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_evaluator.gd")
 const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
-const ShotOutcomeScript := preload("res://scripts/match/shot_outcome.gd")
 const HouseRulesSettingsStoreScript := preload("res://scripts/house_rules/house_rules_settings_store.gd")
+const ShotContextScript := preload("res://scripts/house_rules/shot_context.gd")
+const ShotContactTrackerScript := preload("res://scripts/house_rules/shot_contact_tracker.gd")
+const HouseRulesResolverScript := preload("res://scripts/house_rules/house_rules_resolver.gd")
 
 @export var ball_path: NodePath
 @export var cup_parent_path: NodePath
@@ -41,6 +43,7 @@ var _rack_state := RackStateScript.new()
 var _score_tracker := ShotScoreTrackerScript.new()
 var _pending_cup_removals := CupRemovalQueueScript.new()
 var _house_rules_profile
+var _contact_tracker := ShotContactTrackerScript.new()
 var _score := 0
 var _cups_remaining := 0
 
@@ -83,6 +86,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_attempt_elapsed += delta
+	_contact_tracker.update(_attempt_elapsed)
 	if _try_confirm_score(delta):
 		return
 
@@ -94,6 +98,7 @@ func _build_starting_rack() -> void:
 	CupRackBuilderScript.clear_cup_parent(_cup_parent)
 	_score = 0
 	_pending_cup_removals.clear()
+	_contact_tracker.clear()
 
 	var cups := CupRackBuilderScript.build_triangular_rack(_cup_parent, {
 		"cup_visual_scene": cup_visual_scene,
@@ -112,11 +117,15 @@ func _on_ball_released(_grabber: Node3D, _release_linear_velocity: Vector3, _rel
 	_attempt_active = true
 	_attempt_elapsed = 0.0
 	_clear_score_candidate()
+	_contact_tracker.start_attempt(_ball)
 
 
 func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 	_attempt_active = false
-	var outcome := ShotOutcomeScript.for_attempt(
+	var contact_summary = _contact_tracker.stop_and_get_summary(_attempt_elapsed)
+	var context = _build_shot_context(contact_summary)
+	var outcome := HouseRulesResolverScript.resolve_attempt(
+		context,
 		was_score,
 		scored_cup,
 		scored_reset_delay if was_score else reset_delay
@@ -124,12 +133,15 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 	_reset_countdown = float(outcome.get("reset_delay", reset_delay))
 	_score_tracker.reset()
 
-	if was_score and scored_cup != null and is_instance_valid(scored_cup):
-		_score += 1
-		_rack_state.mark_cup_scored(scored_cup)
+	if bool(outcome.get("was_score", false)):
+		var removed_count := _apply_removed_cup_indices(outcome.get("removed_cup_indices", []))
+		_score += removed_count
 		_cups_remaining = _rack_state.remaining_count()
-		_pending_cup_removals.queue_scored_cup(scored_cup, cup_remove_delay)
-		print("[Game] Score. %d cups remaining." % _cups_remaining)
+		print("[Game] Score removed %d cup(s). %d cups remaining.%s" % [
+			removed_count,
+			_cups_remaining,
+			_format_rule_triggers(outcome),
+		])
 	else:
 		print("[Game] Miss. Resetting ball.")
 
@@ -151,6 +163,7 @@ func _reset_ball() -> void:
 	_attempt_active = false
 	_attempt_elapsed = 0.0
 	_clear_score_candidate()
+	_contact_tracker.clear()
 	_ball.reset_to_transform(_ball_start_transform, true)
 
 
@@ -185,6 +198,52 @@ func _clear_score_candidate() -> void:
 
 func _update_pending_cup_removal(delta: float) -> void:
 	_pending_cup_removals.update(delta)
+
+
+func _build_shot_context(contact_summary):
+	var context = ShotContextScript.new()
+	context.mode_id = &"practice"
+	context.active_side = MatchConstants.PRACTICE_SIDE
+	context.opponent_side = MatchConstants.PRACTICE_SIDE
+	context.active_slot = 0
+	context.target_slot = 0
+	context.ball = _ball
+	context.target_rack_state = _rack_state
+	context.rules_profile = _house_rules_profile
+	context.contact_summary = contact_summary
+	context.normal_shots_taken = 1
+	context.normal_shots_per_turn = 1
+	return context
+
+
+func _apply_removed_cup_indices(values: Variant) -> int:
+	var removed_count := 0
+	var cup_indices := _read_int_array(values)
+	for cup_index in cup_indices:
+		if _rack_state.is_scored(cup_index):
+			continue
+
+		var cup := _rack_state.mark_scored(cup_index)
+		if cup != null and is_instance_valid(cup):
+			_pending_cup_removals.queue_scored_cup(cup, cup_remove_delay)
+			removed_count += 1
+	return removed_count
+
+
+func _read_int_array(values: Variant) -> Array[int]:
+	var result: Array[int] = []
+	var input: Array = values if values is Array else []
+	for value in input:
+		result.append(int(value))
+	result.sort()
+	return result
+
+
+func _format_rule_triggers(outcome: Dictionary) -> String:
+	var triggers: Array = outcome.get("rule_triggers", [])
+	if triggers.is_empty():
+		return ""
+	return " Rules: %s" % [triggers]
 
 
 func _get_attempt_bounds() -> Dictionary:

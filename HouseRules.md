@@ -2,18 +2,67 @@
 
 ## Purpose
 
-House Rules are optional gameplay modifiers that extend the standard scoring rule: a made shot removes the cup the ball comes to rest in. They must work across Practice, Classic Match, and Online Arena by building on the shared match helpers now used by all three modes.
+House Rules are optional gameplay modifiers that extend the baseline rule: a made shot removes the cup the ball comes to rest in. They must work across Practice, Classic Match, and Online Arena by building on the shared match helpers now used by all three modes.
 
-This file is planning guidance for the next House Rules implementation pass. The cleanup described in `Cleanup.md` has been implemented, so future work should extend the shared match layer instead of re-extracting baseline scoring/rack mechanics.
+The first implementation pass added the local data model, saved settings profile, in-menu UI, and rule-ready shot outcome fields. The architecture pass is now in place: Practice, Classic Match, and Online Arena route shot resolution through a shared resolver, track per-shot contacts, and apply multi-cup outcomes from a single `ShotOutcome` dictionary.
 
-## Current Code Observations
+## Current Implementation Snapshot
 
-- Practice mode is driven by `res://scripts/single_player_game.gd`. It still owns local lifecycle, score display, ball reset, and fast single-rack practice flow, but now uses shared helpers for rack creation, rack state, scoring confirmation, miss detection, ball-settle checks, cup removal, and baseline shot outcomes.
-- Classic Match is driven by `res://scripts/classic_match_game.gd`. It still owns turns, two shots per turn, player/computer racks, computer throw execution, match end, and menu return, but now uses the shared helpers for rack construction/state, score confirmation, miss detection, delayed cup removal, and baseline shot outcomes.
-- Online Arena uses `res://scripts/network_match_state.gd` as the centralized networked match authority. It now uses shared helpers for rack construction/state, score confirmation, miss detection, ball-settle checks, delayed cup removal, and baseline shot outcomes while continuing to publish compact authoritative snapshots.
+Implemented House Rules foundation:
+
+- `res://scripts/house_rules/house_rule_ids.gd`
+  Defines stable `StringName` ids, display names, short scoring summaries, and authority summaries for the initial rules:
+  `bouncing`, `chain_lightning`, `ring_of_fire`, `reracks`, `gentlemans`, `balls_back`, `heating_up_fire`, and `island`.
+- `res://scripts/house_rules/house_rules_profile.gd`
+  Stores enabled/disabled rule state. Fresh profiles default every initial rule to enabled and expose a compact ruleset id such as `hr1-11111111`.
+- `res://scripts/house_rules/house_rules_settings_store.gd`
+  Loads and saves the local profile at `user://house_rules_profile.cfg` using `ConfigFile`.
+- `res://scripts/house_rules/shot_context.gd`
+  Provides a rule-ready context object with mode id, active side/player, opponent side/player, slot ids, target rack state, declaration fields, turn fields, rules profile, and contact summary.
+- `res://scripts/house_rules/shot_contact_summary.gd`
+  Provides a serializable contact summary model for table, cup, hand, body, and non-playable contacts. It has helpers for playable-bounce checks and distinct touched target cup indices.
+- `res://scripts/house_rules/shot_contact_tracker.gd`
+  Records distinct contacts from the active ball during a released shot and classifies cup, table, hand, body, and non-playable contacts into a `ShotContactSummary`.
+- `res://scripts/house_rules/house_rules_resolver.gd`
+  Resolves baseline outcomes through the shared `ShotOutcome` helper and applies deterministic Bouncing and Chain Lightning cup-removal rules when enabled.
+- `res://scripts/house_rules/house_rule_toggle.gd`
+  Provides 3D toggle rows for the VR menu panel.
+- `res://scripts/house_rules/house_rules_menu_panel.gd`
+  Builds the in-world House Rules panel, loads the saved profile, saves toggle changes, supports Defaults, and closes via Done.
+
+Implemented integration points:
+
+- `res://scenes/menu.tscn`
+  The old disabled House Rules button now opens the in-world rules panel.
+- `res://scripts/gamemode_menu.gd`
+  Now discovers menu controls recursively, supports command buttons, ignores hidden/disabled controls during raycasts, and opens the House Rules panel.
+- `res://scripts/vr_menu_button.gd`
+  Now supports `command_id` and disables its collision shape when not selectable.
+- `res://scripts/match/shot_outcome.gd`
+  Still returns the baseline dictionary used by existing callers, but now also supports `ignored_cup_indices`, `bonus_shots`, `extra_turns`, `same_side_next_turn`, `ui_messages`, `rule_triggers`, and `ruleset_id`.
+- `res://scripts/single_player_game.gd`
+  Loads the saved House Rules profile on entry, records contacts for each released practice shot, resolves attempts through `HouseRulesResolver`, and applies every cup index in `removed_cup_indices`.
+- `res://scripts/classic_match_game.gd`
+  Loads the saved House Rules profile on entry, records contacts for player and computer shots, resolves both sides through `HouseRulesResolver`, and applies multi-cup outcomes to the correct target rack.
+- `res://scripts/network_match_state.gd`
+  Loads the local profile on entry, seeds authoritative room snapshots with that profile, applies replicated room profiles on peers, records authoritative shot contacts, resolves attempts through `HouseRulesResolver`, publishes scored cup arrays, and serializes the last shot outcome without node references.
+
+Not implemented yet:
+
+- Actual behavior for Ring of Fire, Reracks, Gentleman's, Balls Back, Heating Up / Fire, or Island.
+- Pre-shot declaration UI/resources for Island, Reracks, Gentleman's, or Heating Up acknowledgement.
+- Ring of Fire center-gap score detection.
+- Rerack shape data or cup-moving logic.
+- Focused tests/validation scenes for individual rule behavior.
+- Photon room-property publication for the compact ruleset id before gameplay starts.
+
+## Existing Shared Match Baseline
+
+- Practice mode is driven by `res://scripts/single_player_game.gd`. It owns local lifecycle, score display, ball reset, and fast single-rack practice flow while using shared helpers for rack creation, rack state, scoring confirmation, miss detection, ball-settle checks, cup removal, and baseline shot outcomes.
+- Classic Match is driven by `res://scripts/classic_match_game.gd`. It owns turns, two shots per turn, player/computer racks, computer throw execution, match end, and menu return while using shared helpers for rack construction/state, score confirmation, miss detection, delayed cup removal, and baseline shot outcomes.
+- Online Arena uses `res://scripts/network_match_state.gd` as the centralized networked match authority. It uses shared helpers for rack construction/state, score confirmation, miss detection, ball-settle checks, delayed cup removal, and baseline shot outcomes while publishing compact authoritative snapshots.
 - `res://scripts/cup_target.gd` owns per-cup score detection through `is_ball_resting_inside()`, exposes `cup_index` metadata in match modes, and marks/removes cups.
-- `res://scripts/pong_physics_surface.gd` already carries a `surface_id`, which is a good starting point for bounce/contact classification.
-- `res://scenes/menu.tscn` already contains a disabled `House Rules` menu button. The implementation pass should make this open a rules settings panel instead of adding a separate menu style.
+- `res://scripts/pong_physics_surface.gd` carries a `surface_id`, which should be used as the starting point for bounce/contact classification.
 - `res://scripts/match/pong_match_constants.gd` defines shared rack constants, settle tuning defaults, local side names, and network player slot constants.
 - `res://scripts/match/cup_rack_builder.gd` builds the standard triangular 10-cup rack, clears rack parents, names cups, and assigns stable `cup_index`, owner, row, and column metadata.
 - `res://scripts/match/rack_state.gd` tracks cups by stable index, available/scored state, remaining count, and resting-cup lookup.
@@ -21,10 +70,9 @@ This file is planning guidance for the next House Rules implementation pass. The
 - `res://scripts/match/shot_score_tracker.gd` owns score-candidate confirmation after the configured settle delay.
 - `res://scripts/match/shot_attempt_evaluator.gd` owns shared miss/out-of-bounds/timeout detection through explicit per-mode bounds.
 - `res://scripts/match/cup_removal_queue.gd` owns delayed visual removal for local cup references and network slot/index lookups.
-- `res://scripts/match/shot_outcome.gd` is the current lightweight baseline outcome dictionary for made/missed shots, scored cup index, removed cup indices, reset delay, and winner.
 - `res://scripts/match/computer_target_selector.gd` provides swappable computer target selection using `most_central` and `closest` heuristics. Classic Match exposes this via `computer_target_heuristic`; computer throw execution and accuracy offset remain in `classic_match_game.gd`.
-
-The important architectural issue has changed: baseline scoring and rack mechanics are no longer duplicated, but the shared layer is still a baseline helper layer, not a full House Rules resolver. The next pass should add rule-aware context/outcome objects around these helpers without moving authority back into individual mode scripts.
+- `res://scripts/match/classic_match_model.gd` owns shared classic-match logical state: active slot, shots taken, scores, scored cup indices, turn advancement, and winner detection. Classic Match, Online Arena, and the editor-only computer-vs-computer simulation use it so shot outcomes mutate match state consistently.
+- `res://scenes/editor/computer_classic_match.tscn` is an editor-only CPU-vs-CPU classic match simulation. It builds real cup racks, uses `ComputerTargetSelector`, resolves virtual shots through `HouseRulesResolver`, exposes custom House Rules profile controls, and provides `run_automatic_test()`, `step_simulation()`, and `get_test_snapshot()` for Codex validation.
 
 ## Design Goals
 
@@ -35,45 +83,57 @@ The important architectural issue has changed: baseline scoring and rack mechani
 - Rules should separate gameplay state from presentation. VFX, labels, and sounds should react to a resolved outcome but never decide scoring.
 - Rules should be data-oriented where practical: enabled flags, per-side resources, per-player streaks, touched cups, scoring cup, bonus shots, winner, and rerack state should serialize cleanly.
 
-## Recommended Architecture
-
-Keep the baseline helpers under `res://scripts/match/` and add rule-specific code under `res://scripts/house_rules/` or an equivalent clearly separated folder:
-
-- `HouseRuleIds`: stable string or `StringName` constants for each rule.
-- `HouseRulesProfile`: enabled/disabled settings for all rules. Defaults every initial rule to enabled.
-- `HouseRulesSettingsStore`: loads and saves the local user's preferred enabled rules between sessions.
-- `ShotContext`: immutable input describing the active mode, active side/player, opponent side, ball, target `RackState`, contacts, selected shot declaration, current turn state, and enabled rules.
-- `ShotContactTracker`: per-shot tracker attached to or fed by the ball that records contacts with playable surfaces, cups, hands, and bodies after release.
-- `ShotOutcome`: evolve or wrap the existing `res://scripts/match/shot_outcome.gd` baseline dictionary so it can contain made/missed state, scored cup, extra cups to remove, ignored cups, bonus shots, extra turns, winner, reset timing hints, UI messages, and rule trigger metadata.
-- `HouseRulesResolver`: evaluates standard scoring plus enabled rules and returns a `ShotOutcome`.
-- `RackState`: use the existing `res://scripts/match/rack_state.gd` as the shared rack representation for both local and networked modes. Extend it only where rules need explicit topology, starting-role metadata, or rerack arrangement state.
+## Target Runtime Flow
 
 Mode scripts should move toward this shape:
 
 1. Mode owns lifecycle: start match, start turn, release shot, advance/reset, update labels.
 2. Mode asks existing shared helpers for rack creation/state and score detection.
-3. Mode sends `ShotContext` to `HouseRulesResolver`.
-4. Mode applies `ShotOutcome` through the existing shared cup-removal path.
-5. Online Arena serializes only the authoritative outcome and state changes, not every cosmetic effect.
+3. Mode builds a `ShotContext` with active side/player, target rack, current turn state, selected declaration, enabled rules, and contact summary.
+4. Mode sends the context and baseline made/miss information to `HouseRulesResolver`.
+5. Mode applies the returned `ShotOutcome` through existing rack-state and cup-removal paths.
+6. Online Arena serializes only the authoritative outcome and resulting state changes, not every cosmetic effect.
 
-## Menu and Persistence
+The next pass should avoid moving authority back into individual mode scripts. If a rule needs extra state, add that state to the shared context/outcome/match-state path first.
 
-- The `House Rules` option in `res://scenes/menu.tscn` should become selectable and open an in-world panel.
-- The panel should list each rule name with a toggle switch.
-- Default state: all listed House Rules are enabled for a fresh profile.
-- Toggle changes should be saved immediately or when closing the panel using `user://` storage, not project settings committed to source control.
-- The saved profile should be loaded before entering Practice, Classic Match, or Online Arena.
-- Online Arena should treat the host or room creator's selected rules as the room rules. Persisted local preferences should seed room creation, but once in a room all players use the room's replicated rules profile.
+## Menu and Persistence State
+
+Current behavior:
+
+- The House Rules option in `res://scenes/menu.tscn` is selectable and opens an in-world panel.
+- The panel lists each rule name with an ON/OFF toggle.
+- Fresh profiles default all listed House Rules to enabled.
+- Toggle changes and Defaults save through `user://house_rules_profile.cfg`.
+- Practice, Classic Match, and Online Arena load the saved profile on entry.
+- Online Arena match snapshots carry an authoritative `house_rules_profile` dictionary once snapshots are published.
+
+Remaining work:
+
 - Future Photon room creation should expose a compact ruleset identifier/hash in room properties before gameplay starts.
+- The lobby/room browser UI should display the room ruleset once Photon room properties are available.
+
+## Next Pass Scope
+
+The next pass should continue implementing rule behavior in small, reversible steps. The resolver/routing/contact-tracking path already exists.
+
+Recommended order:
+
+1. Add focused validation coverage for Bouncing and Chain Lightning using synthetic `ShotContext` and `ShotContactSummary` inputs.
+2. Add a small in-scene or headless validation path for rule-driven multi-cup removal in Practice and Classic Match.
+3. Add turn/resource state for Balls Back, Heating Up / Fire, Reracks, Gentleman's, and Island.
+4. Add pre-shot UI affordances for Reracks, Gentleman's, Heating Up acknowledgement, and Island calls.
+5. Add data-driven rerack shape definitions and cup-moving logic that preserves stable cup indices.
+6. Add Photon room-property publication for the compact ruleset id.
+7. Add Ring of Fire after rack role metadata and center-gap detection are reliable.
 
 ## Shot Contact Model
 
-Several rules depend on what the ball touched before scoring. Add contact tracking before implementing those rules.
+Several rules depend on what the ball touched before scoring. The data model exists in `ShotContactSummary`, and released shots now use `ShotContactTracker` to capture distinct contacts from the ball's reported collisions.
 
 Track these event types per released shot:
 
 - `table`: playable table surface.
-- `cup`: any active cup, including cup index and owning side.
+- `cup`: any active cup, including cup index and owning side or slot.
 - `hand`: opponent hand/controller avatar.
 - `body`: opponent body/avatar hit zone when body avatars exist.
 - `non_playable`: floor, walls, local player's own body/hand, or other surfaces that do not count for bounce rewards.
@@ -88,7 +148,7 @@ Explicit non-counting case:
 
 - If the ball bounces off the rim/body of a cup and lands in that same cup, that contact does not count as a Bouncing bonus.
 
-For Online Arena, the active ball authority should collect contacts for the active throw and include the resolved contact summary in the authoritative shot resolution. Peers should apply the summary rather than infer their own separate rule result.
+For Online Arena, the active ball authority collects contacts for the active throw and resolves the shot once. Peers apply the resulting scored cup arrays and serialized shot outcome rather than inferring their own separate rule result.
 
 ## Rule Definitions
 
@@ -99,21 +159,33 @@ If a throw touches at least one playable bounce surface and then scores in a cup
 Implementation notes:
 
 - The scored cup is always removed first.
-- The additional cup selection must be deterministic. Prefer an explicit rule policy such as "nearest active cup to the scored cup" or "lowest active cup index excluding the scored cup" until a better UX is designed.
+- The additional cup selection must be deterministic. Use `lowest active cup index excluding already removed cups` for the first implementation unless a better UX is added.
 - Contact with the scored cup itself does not satisfy the bounce condition.
-- If Chain Lightning is also enabled and removes cups from touched cup contacts, do not remove the same cup twice.
+- Resolve Chain Lightning first if both rules are enabled. Bouncing may then add one deterministic extra cup only if an eligible active cup remains.
+- Record a `rule_triggers` entry with the rule id and extra cup index.
+
+Current state:
+
+- Implemented in `HouseRulesResolver`.
+- Driven by `ShotContactTracker` table/cup/hand/body contacts.
 
 ### Chain Lightning
 
-If the ball hits multiple cups and ends up scoring in a cup, each touched opponent cup is removed.
+If the ball hits one or more other active opponent cups and ends up scoring in a cup, each touched opponent cup is removed.
 
 Implementation notes:
 
 - Count distinct active opponent cups touched during the shot.
 - Remove the scored cup plus each distinct touched opponent cup.
 - Exclude cups already scored/removed.
-- Decide in the implementation pass whether the scored cup must be included in the "multiple cups" count. Recommended behavior: Chain Lightning triggers only when at least one other active opponent cup was touched before the final score.
-- If Bouncing is also enabled, resolve Chain Lightning first, then let Bouncing add one deterministic extra cup only if there is still an active eligible cup.
+- Recommended behavior: Chain Lightning triggers only when at least one other active opponent cup was touched before the final score.
+- Do not remove the same cup twice.
+- Record touched cup indices in `rule_triggers`.
+
+Current state:
+
+- Implemented in `HouseRulesResolver`.
+- Uses distinct touched target cup indices from `ShotContactSummary`.
 
 ### Ring of Fire
 
@@ -121,10 +193,10 @@ If a side has removed the opponent's three corner cups and center cup, leaving a
 
 Implementation notes:
 
-- This requires stable cup identity. Define starting rack indices for `corner` and `center` cups in shared rack metadata instead of relying on scene order guesses.
+- This requires stable cup identity. Define starting rack roles for `corner` and `center` cups in shared rack metadata instead of relying on scene order guesses.
 - Add an alternate scoring detector for the ring center gap. It should confirm the ball has settled inside a target area between the remaining six cups, not inside a cup.
 - Ring of Fire is an alternate win condition, not a cup removal bonus.
-- The resolver should report `winner_side` or `winner_player_id` directly in `ShotOutcome`.
+- The resolver should report `winner_side` or `winner_player_id` through `ShotOutcome`.
 - Network snapshots must carry this as a resolved win state.
 
 ### Reracks
@@ -135,7 +207,7 @@ Implementation notes:
 
 - Rerack is a per-side match resource, not a per-player local preference.
 - Rerack should be requested before a shot, not during a released throw.
-- Rerack shapes should be data-driven and implemented in a focused later pass.
+- Rerack shapes should be data-driven and can land after the resolver path is stable.
 - The initial implementation can define the resource and request/apply flow before adding the full shape list.
 - Rerack application should move existing cup nodes and update `RackState`; it should not destroy/recreate scored cups in a way that loses stable indices.
 - Online Arena should make rerack requests authoritative through `NetworkMatchState`.
@@ -151,7 +223,8 @@ An extra rerack available whenever a team has two target cups left. It arranges 
 
 Implementation notes:
 
-- This does not consume the normal one-rerack resource unless the rule implementation explicitly chooses to do so. Recommended behavior: track it as a separate per-side resource.
+- This should not consume the normal one-rerack resource.
+- Track it as a separate per-side resource.
 - It is available only when exactly two active target cups remain.
 - It should use the same rerack request/apply pipeline as standard Reracks.
 - Online Arena should replicate whether the Gentleman's resource has been used per side.
@@ -162,10 +235,10 @@ If a side makes both of its two shots in a normal turn, that side receives anoth
 
 Implementation notes:
 
-- Track made shots within the current turn.
+- Track made shots within the current normal turn.
 - Award another turn only when both normal turn shots were made.
-- Decide how bonus shots interact with this rule. Recommended behavior: Heating up/Fire bonus shots do not count as the two normal shots needed for Balls Back unless explicitly represented as a new normal turn.
-- `ShotOutcome` should include a turn-flow directive such as `same_side_next_turn`.
+- Heating Up / Fire bonus shots should not count as the two normal shots needed for Balls Back unless explicitly represented as a new normal turn.
+- `ShotOutcome.same_side_next_turn` is available for this turn-flow directive.
 
 ### Heating Up / Fire
 
@@ -178,7 +251,7 @@ Implementation notes:
 - If the player fails to acknowledge before the third throw, the third make should count as a normal make but should not award On Fire.
 - Bonus shots should be represented separately from normal shots remaining so they do not corrupt two-shot turn logic.
 - A miss resets that player's make streak and On Fire state.
-- Online Arena should replicate the acknowledgement and streak state through match snapshots or dedicated reliable RPCs.
+- Online Arena should replicate acknowledgement and streak state through match snapshots or dedicated reliable RPCs.
 
 ### Island
 
@@ -201,42 +274,35 @@ Online Arena should keep `NetworkMatchState` as the centralized owner of match d
 
 Recommended flow:
 
-1. Active local player releases the ball.
-2. Ball authority records contact summary until score/miss resolution.
-3. `NetworkMatchState` builds `ShotContext`.
-4. Shared resolver returns `ShotOutcome`.
-5. `NetworkMatchState` publishes one snapshot containing updated scores, scored cup indices, active player, shots/bonus state, rerack resources, player streaks, enabled rules, winner, and reset delay.
-6. Peers apply that snapshot and play local presentation.
+1. Host creates or joins the Photon room and seeds room rules from the local `HouseRulesProfile`.
+2. Room rules are published in match snapshots before gameplay starts.
+3. Active local player releases the ball.
+4. Ball authority records contact summary until score/miss resolution.
+5. `NetworkMatchState` builds `ShotContext`.
+6. Shared resolver returns `ShotOutcome`.
+7. `NetworkMatchState` publishes one snapshot containing updated scores, scored cup indices, active player, shots/bonus state, rerack resources, player streaks, enabled rules, winner, and reset delay.
+8. Peers apply that snapshot and play local presentation.
 
 Do not rely on every peer independently detecting Bouncing, Chain Lightning, Ring of Fire, or Island. Small physics differences can desync results.
 
-## Integration Order
+## Validation Notes
 
-Implement in small passes:
-
-1. Add `HouseRuleIds`, `HouseRulesProfile`, `HouseRulesSettingsStore`, `ShotContext`, `ShotContactSummary`, and a rule-aware `ShotOutcome` extension/wrapper around the existing baseline outcome.
-2. Add `HouseRulesResolver` with all rules disabled internally and route Practice, Classic Match, and Online Arena through it while preserving current baseline behavior.
-3. Add settings persistence and turn the menu's disabled `House Rules` button into an in-world toggle panel.
-4. Load the saved local profile before entering Practice or Classic Match. For Online Arena, seed room creation from the host profile and replicate the authoritative room profile in match snapshots.
-5. Add contact tracking and enable Bouncing and Chain Lightning first because they depend on shot contact summaries but not on complex pre-shot declarations.
-6. Add per-side/per-player resources for Reracks, Gentleman's, Balls Back, Heating Up/Fire, and Island declarations.
-7. Add Ring of Fire alternate score detection after rack metadata, starting-role labels, and center-gap detection are reliable.
-8. Add focused validation scenes or tests for each rule and keep the existing local scene smoke checks passing.
-
-## Current Cleanup Verification
-
-After the cleanup pass, local validation logs show:
+First-pass local validation:
 
 - `.\tools\validate_codex.cmd` reached the menu scene in Godot 4.7.1 and loaded the non-XR fallback camera without script crashes.
-- Practice smoke validation loaded with 10 cups and the shared single-player loop.
-- Classic Match smoke validation loaded with 10 cups per side and started the player's two-shot turn.
-- Online Arena smoke validation loaded the networked scene, initialized Photon Fusion Godot SDK `3.0.0.2787`, began connecting, then disconnected cleanly during local validation.
+- Practice smoke validation loaded with 10 cups and logged the default `hr1-11111111` House Rules profile.
+- Classic Match smoke validation loaded with 10 cups per side, started the player's two-shot turn, and logged the default `hr1-11111111` House Rules profile.
+- Online Arena smoke validation loaded the networked scene, initialized Photon Fusion Godot SDK `3.0.0.2787`, began connecting, then disconnected during local validation. This remains a local networking validation caveat, not evidence of rule behavior.
+- Computer Classic Match automatic validation runs with `.\Godot_v4.7.1-stable_win64_console.exe --headless --xr-mode off --path project-pong --scene res://scenes/editor/computer_classic_match.tscn --log-file codex-computer-classic-auto.log -- --codex-auto-test --codex-max-shots=160`. The current deterministic smoke completes a CPU-vs-CPU match and reports a JSON snapshot with `passed: true` when shared-model scores and scored cup indices stay consistent.
 
-The logs still show a Windows root certificate store warning during Godot startup. Treat that as an environment warning unless it begins blocking network or export validation.
+Known local environment warnings:
 
-Quest hardware verification was not captured in the cleanup logs. Any future House Rules milestone still needs on-device Quest 2 or Quest 3 testing before it is considered complete.
+- Godot logs `Property not found: 'xr/openxr/extensions/hand_tracking'`.
+- Godot logs a Windows root certificate store warning during startup.
 
-## Validation Expectations
+Quest hardware verification was not captured in the first House Rules pass. Any future House Rules milestone still needs on-device Quest 2 or Quest 3 testing before it is considered complete.
+
+## Completion Expectations
 
 Before declaring House Rules complete:
 
@@ -244,8 +310,8 @@ Before declaring House Rules complete:
 - Classic Match still handles player turn, computer turn, score, win, and return-to-menu.
 - Online Arena still separates local player input, remote hand visibility, ball authority, and shared match state.
 - Each rule can be enabled or disabled independently.
-- The default saved profile enables every initial rule.
+- The default fresh profile enables every initial rule.
 - Disabled rules produce baseline scoring.
-- Two enabled rules cannot remove the same cup twice.
+- Enabled rules cannot remove the same cup twice.
 - Multiplayer resolves each shot once and all peers apply the same cup removals, turn state, resources, and winner.
 - Hardware verification on Quest remains required for final confidence. If unavailable, report which local validations were run instead.

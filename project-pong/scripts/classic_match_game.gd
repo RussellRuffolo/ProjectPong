@@ -2,18 +2,21 @@ extends Node
 class_name ClassicMatchGame
 
 const MatchConstants := preload("res://scripts/match/pong_match_constants.gd")
+const ClassicMatchModelScript := preload("res://scripts/match/classic_match_model.gd")
 const CupRackBuilderScript := preload("res://scripts/match/cup_rack_builder.gd")
 const RackStateScript := preload("res://scripts/match/rack_state.gd")
 const ShotPhysicsScript := preload("res://scripts/match/shot_physics.gd")
 const ShotScoreTrackerScript := preload("res://scripts/match/shot_score_tracker.gd")
 const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_evaluator.gd")
 const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
-const ShotOutcomeScript := preload("res://scripts/match/shot_outcome.gd")
 const ComputerTargetSelectorScript := preload("res://scripts/match/computer_target_selector.gd")
 const HouseRulesSettingsStoreScript := preload("res://scripts/house_rules/house_rules_settings_store.gd")
+const ShotContextScript := preload("res://scripts/house_rules/shot_context.gd")
+const ShotContactTrackerScript := preload("res://scripts/house_rules/shot_contact_tracker.gd")
+const HouseRulesResolverScript := preload("res://scripts/house_rules/house_rules_resolver.gd")
 
-const TURN_PLAYER := 0
-const TURN_COMPUTER := 1
+const TURN_PLAYER := MatchConstants.PLAYER_ONE_SLOT
+const TURN_COMPUTER := MatchConstants.PLAYER_TWO_SLOT
 const COMPUTER_TARGET_MOST_CENTRAL := "most_central"
 
 @export var ball_path: NodePath
@@ -54,16 +57,14 @@ var _ball: ThrowableBall
 var _player_cup_parent: Node3D
 var _computer_cup_parent: Node3D
 var _status_label: Label3D
+var _match_model := ClassicMatchModelScript.new()
 var _player_rack_state := RackStateScript.new()
 var _computer_rack_state := RackStateScript.new()
 var _pending_cup_removals := CupRemovalQueueScript.new()
 var _house_rules_profile
+var _contact_tracker := ShotContactTrackerScript.new()
 var _score_tracker := ShotScoreTrackerScript.new()
 var _rng := RandomNumberGenerator.new()
-var _active_turn := TURN_PLAYER
-var _shots_remaining := 0
-var _player_score := 0
-var _computer_score := 0
 var _attempt_active := false
 var _attempt_elapsed := 0.0
 var _reset_countdown := -1.0
@@ -71,7 +72,6 @@ var _turn_transition_countdown := -1.0
 var _pending_turn := TURN_PLAYER
 var _computer_shot_countdown := -1.0
 var _game_over := false
-var _winner_turn := -1
 var _return_countdown := -1.0
 var _last_computer_shot_summary := ""
 
@@ -93,7 +93,12 @@ func _ready() -> void:
 	print("[ClassicMatch] Loaded House Rules profile %s." % _house_rules_profile.get_compact_ruleset_id())
 	_rng.randomize()
 	_ball.released.connect(_on_ball_released)
+	_match_model.configure({
+		"shots_per_turn": shots_per_turn,
+		"rack_size": MatchConstants.RACK_SIZE,
+	})
 	_build_starting_racks()
+	_match_model.reset_for_match(TURN_PLAYER)
 	_start_player_turn()
 	print("[ClassicMatch] Ready on a %.2fm table with %d cups per side." % [table_length_meters, MatchConstants.RACK_SIZE])
 
@@ -112,7 +117,7 @@ func _physics_process(delta: float) -> void:
 		_update_turn_transition(delta)
 		return
 
-	if _active_turn == TURN_PLAYER:
+	if _match_model.active_slot == TURN_PLAYER:
 		_update_player_turn(delta)
 	else:
 		_update_computer_turn(delta)
@@ -124,8 +129,6 @@ func _build_starting_racks() -> void:
 	_player_rack_state.clear()
 	_computer_rack_state.clear()
 	_pending_cup_removals.clear()
-	_player_score = 0
-	_computer_score = 0
 
 	var half_length := table_length_meters * 0.5
 	var player_back_row_z := table_center_z + half_length - rack_end_margin
@@ -153,20 +156,16 @@ func _build_starting_racks() -> void:
 
 
 func _start_player_turn() -> void:
-	_active_turn = TURN_PLAYER
-	_shots_remaining = shots_per_turn
 	_reset_countdown = -1.0
 	_turn_transition_countdown = -1.0
 	_computer_shot_countdown = -1.0
 	_last_computer_shot_summary = ""
 	_reset_ball_for_player()
 	_update_status_label()
-	print("[ClassicMatch] Player turn started with %d shots." % _shots_remaining)
+	print("[ClassicMatch] Player turn started with %d shots." % _match_model.get_shots_remaining())
 
 
 func _start_computer_turn() -> void:
-	_active_turn = TURN_COMPUTER
-	_shots_remaining = shots_per_turn
 	_attempt_active = false
 	_reset_countdown = -1.0
 	_turn_transition_countdown = -1.0
@@ -175,7 +174,7 @@ func _start_computer_turn() -> void:
 	_set_ball_grabbable(false)
 	_ball.reset_to_transform(_get_computer_ball_spawn_transform(), true)
 	_update_status_label()
-	print("[ClassicMatch] Computer turn started with %d shots." % _shots_remaining)
+	print("[ClassicMatch] Computer turn started with %d shots." % _match_model.get_shots_remaining())
 
 
 func _schedule_turn(next_turn: int, delay: float) -> void:
@@ -208,6 +207,7 @@ func _update_player_turn(delta: float) -> void:
 		return
 
 	_attempt_elapsed += delta
+	_contact_tracker.update(_attempt_elapsed)
 	if _try_confirm_score(delta, _computer_rack_state, Callable(self, "_resolve_player_attempt")):
 		return
 
@@ -231,6 +231,7 @@ func _update_computer_turn(delta: float) -> void:
 		return
 
 	_attempt_elapsed += delta
+	_contact_tracker.update(_attempt_elapsed)
 	if _try_confirm_score(delta, _player_rack_state, Callable(self, "_resolve_computer_attempt")):
 		return
 
@@ -239,18 +240,18 @@ func _update_computer_turn(delta: float) -> void:
 
 
 func _on_ball_released(_grabber: Node3D, _release_linear_velocity: Vector3, _release_angular_velocity: Vector3) -> void:
-	if _game_over or _active_turn != TURN_PLAYER or _shots_remaining <= 0:
+	if _game_over or _match_model.active_slot != TURN_PLAYER or _match_model.get_shots_remaining() <= 0:
 		return
 	if _attempt_active or _reset_countdown >= 0.0 or _turn_transition_countdown >= 0.0:
 		return
 
 	_attempt_active = true
 	_attempt_elapsed = 0.0
-	_shots_remaining = max(0, _shots_remaining - 1)
 	_clear_score_candidate()
+	_contact_tracker.start_attempt(_ball)
 	_set_ball_grabbable(false)
 	_update_status_label()
-	print("[ClassicMatch] Player released shot. %d shots remaining." % _shots_remaining)
+	print("[ClassicMatch] Player released shot. %d shots remaining." % max(0, _match_model.get_shots_remaining() - 1))
 
 
 func _try_confirm_score(delta: float, target_rack_state, resolve_attempt: Callable) -> bool:
@@ -265,34 +266,42 @@ func _try_confirm_score(delta: float, target_rack_state, resolve_attempt: Callab
 
 func _resolve_player_attempt(was_score: bool, scored_cup: Node3D) -> void:
 	_attempt_active = false
-	var outcome := ShotOutcomeScript.for_attempt(
+	var outcome := _resolve_house_rule_attempt(
 		was_score,
 		scored_cup,
-		scored_reset_delay if was_score else reset_delay
+		_computer_rack_state,
+		MatchConstants.PLAYER_SIDE,
+		MatchConstants.COMPUTER_SIDE
 	)
+	var transition := _match_model.apply_shot_outcome(TURN_PLAYER, TURN_COMPUTER, outcome)
 	_score_tracker.reset()
 
-	if was_score and scored_cup != null and is_instance_valid(scored_cup):
-		_player_score += 1
-		_remove_computer_cup(scored_cup)
-		print("[ClassicMatch] Player scored. Computer cups remaining: %d." % _computer_rack_state.remaining_count())
+	var resolved_score := bool(transition.get("resolved_score", false))
+	if resolved_score:
+		var removed_count := _remove_computer_cup_indices(transition.get("new_removed_cup_indices", []))
+		print("[ClassicMatch] Player scored and removed %d cup(s). Computer cups remaining: %d.%s" % [
+			removed_count,
+			_computer_rack_state.remaining_count(),
+			_format_rule_triggers(outcome),
+		])
 	else:
 		print("[ClassicMatch] Player missed.")
 
 	_update_status_label()
 
-	if _computer_rack_state.remaining_count() == 0:
+	if _match_model.winner_slot == TURN_PLAYER:
 		_finish_match(TURN_PLAYER)
 		return
 
-	if _shots_remaining > 0:
+	if not bool(transition.get("turn_advanced", false)):
 		_reset_countdown = float(outcome.get("reset_delay", reset_delay))
 	else:
-		_schedule_turn(TURN_COMPUTER, scored_reset_delay if was_score else turn_transition_delay)
+		var next_turn := int(transition.get("active_slot", TURN_COMPUTER))
+		_schedule_turn(next_turn, float(outcome.get("reset_delay", scored_reset_delay)) if resolved_score else turn_transition_delay)
 
 
 func _execute_computer_throw() -> void:
-	if _shots_remaining <= 0:
+	if _match_model.get_shots_remaining() <= 0:
 		_schedule_turn(TURN_PLAYER, turn_transition_delay)
 		return
 
@@ -303,7 +312,6 @@ func _execute_computer_throw() -> void:
 
 	_attempt_active = true
 	_attempt_elapsed = 0.0
-	_shots_remaining = max(0, _shots_remaining - 1)
 	_clear_score_candidate()
 
 	var target_position := _get_computer_aim_position(target_cup)
@@ -312,44 +320,52 @@ func _execute_computer_throw() -> void:
 	_ball.linear_velocity = release_velocity
 	_ball.angular_velocity = _ball.release_spin
 	_ball.sleeping = false
+	_contact_tracker.start_attempt(_ball)
 	_last_computer_shot_summary = "Computer aimed at %s." % target_cup.name
 	_update_status_label()
 	print("[ClassicMatch] Computer threw at %s with velocity %s. %d shots remaining." % [
 		target_cup.name,
 		release_velocity,
-		_shots_remaining,
+		max(0, _match_model.get_shots_remaining() - 1),
 	])
 
 
 func _resolve_computer_attempt(was_score: bool, scored_cup: Node3D) -> void:
 	_attempt_active = false
-	var outcome := ShotOutcomeScript.for_attempt(
+	var outcome := _resolve_house_rule_attempt(
 		was_score,
 		scored_cup,
-		scored_reset_delay if was_score else reset_delay
+		_player_rack_state,
+		MatchConstants.COMPUTER_SIDE,
+		MatchConstants.PLAYER_SIDE
 	)
+	var transition := _match_model.apply_shot_outcome(TURN_COMPUTER, TURN_PLAYER, outcome)
 	_score_tracker.reset()
 
-	if was_score and scored_cup != null and is_instance_valid(scored_cup):
-		_computer_score += 1
-		_remove_player_cup(scored_cup)
+	var resolved_score := bool(transition.get("resolved_score", false))
+	if resolved_score:
+		var removed_count := _remove_player_cup_indices(transition.get("new_removed_cup_indices", []))
 		_last_computer_shot_summary = "Computer hit %s." % scored_cup.name
-		print("[ClassicMatch] Computer scored. Player cups remaining: %d." % _player_rack_state.remaining_count())
+		print("[ClassicMatch] Computer scored and removed %d cup(s). Player cups remaining: %d.%s" % [
+			removed_count,
+			_player_rack_state.remaining_count(),
+			_format_rule_triggers(outcome),
+		])
 	else:
 		_last_computer_shot_summary = "Computer missed."
 		print("[ClassicMatch] Computer missed.")
 
 	_update_status_label()
 
-	if _player_rack_state.remaining_count() == 0:
+	if _match_model.winner_slot == TURN_COMPUTER:
 		_finish_match(TURN_COMPUTER)
 		return
 
-	if _shots_remaining > 0:
+	if not bool(transition.get("turn_advanced", false)):
 		_reset_countdown = float(outcome.get("reset_delay", reset_delay))
 	else:
 		_computer_shot_countdown = -1.0
-		_schedule_turn(TURN_PLAYER, turn_transition_delay)
+		_schedule_turn(int(transition.get("active_slot", TURN_PLAYER)), turn_transition_delay)
 
 
 func _remove_player_cup(cup: Node3D) -> void:
@@ -360,6 +376,27 @@ func _remove_player_cup(cup: Node3D) -> void:
 func _remove_computer_cup(cup: Node3D) -> void:
 	_computer_rack_state.mark_cup_scored(cup)
 	_pending_cup_removals.queue_scored_cup(cup, cup_remove_delay)
+
+
+func _remove_player_cup_indices(values: Variant) -> int:
+	return _remove_cup_indices(_player_rack_state, values)
+
+
+func _remove_computer_cup_indices(values: Variant) -> int:
+	return _remove_cup_indices(_computer_rack_state, values)
+
+
+func _remove_cup_indices(rack_state, values: Variant) -> int:
+	var removed_count := 0
+	for cup_index in _read_int_array(values):
+		if rack_state.is_scored(cup_index):
+			continue
+
+		var cup: Node3D = rack_state.mark_scored(cup_index)
+		if cup != null and is_instance_valid(cup):
+			_pending_cup_removals.queue_scored_cup(cup, cup_remove_delay)
+			removed_count += 1
+	return removed_count
 
 
 func _update_pending_cup_removals(delta: float) -> void:
@@ -435,8 +472,9 @@ func _reset_ball_for_player() -> void:
 	_attempt_active = false
 	_attempt_elapsed = 0.0
 	_clear_score_candidate()
+	_contact_tracker.clear()
 	_ball.reset_to_transform(_get_player_ball_spawn_transform(), true)
-	_set_ball_grabbable(_active_turn == TURN_PLAYER and _shots_remaining > 0 and not _game_over)
+	_set_ball_grabbable(_match_model.active_slot == TURN_PLAYER and _match_model.get_shots_remaining() > 0 and not _game_over)
 	_update_status_label()
 
 
@@ -445,8 +483,9 @@ func _reset_ball_for_computer() -> void:
 	_attempt_active = false
 	_attempt_elapsed = 0.0
 	_clear_score_candidate()
+	_contact_tracker.clear()
 	_ball.reset_to_transform(_get_computer_ball_spawn_transform(), true)
-	_computer_shot_countdown = computer_shot_delay if _shots_remaining > 0 and not _game_over else -1.0
+	_computer_shot_countdown = computer_shot_delay if _match_model.get_shots_remaining() > 0 and not _game_over else -1.0
 	_update_status_label()
 
 
@@ -465,7 +504,6 @@ func _set_ball_grabbable(is_grabbable: bool) -> void:
 
 func _finish_match(winner_turn: int) -> void:
 	_game_over = true
-	_winner_turn = winner_turn
 	_return_countdown = return_to_menu_delay
 	_attempt_active = false
 	_reset_countdown = -1.0
@@ -493,14 +531,65 @@ func _clear_score_candidate() -> void:
 	_score_tracker.reset()
 
 
+func _resolve_house_rule_attempt(was_score: bool, scored_cup: Node3D, target_rack_state, active_side: StringName, opponent_side: StringName) -> Dictionary:
+	var contact_summary = _contact_tracker.stop_and_get_summary(_attempt_elapsed)
+	var context = _build_shot_context(contact_summary, target_rack_state, active_side, opponent_side)
+	return HouseRulesResolverScript.resolve_attempt(
+		context,
+		was_score,
+		scored_cup,
+		scored_reset_delay if was_score else reset_delay
+	)
+
+
+func _build_shot_context(contact_summary, target_rack_state, active_side: StringName, opponent_side: StringName):
+	var context = ShotContextScript.new()
+	context.mode_id = &"classic_match"
+	context.active_side = active_side
+	context.opponent_side = opponent_side
+	context.active_slot = 0
+	context.target_slot = 0
+	context.ball = _ball
+	context.target_rack_state = target_rack_state
+	context.rules_profile = _house_rules_profile
+	context.contact_summary = contact_summary
+	context.normal_shots_taken = _match_model.shots_taken_this_turn + 1
+	context.normal_shots_per_turn = shots_per_turn
+	return context
+
+
+func _read_int_array(values: Variant) -> Array[int]:
+	var result: Array[int] = []
+	var input: Array = values if values is Array else []
+	for value in input:
+		result.append(int(value))
+	result.sort()
+	return result
+
+
+func _format_rule_triggers(outcome: Dictionary) -> String:
+	var triggers: Array = outcome.get("rule_triggers", [])
+	if triggers.is_empty():
+		return ""
+	return " Rules: %s" % [triggers]
+
+
 func _update_status_label() -> void:
 	if _status_label == null:
 		return
 
-	var score_line := "You: %d / %d  CPU: %d / %d" % [_player_score, MatchConstants.RACK_SIZE, _computer_score, MatchConstants.RACK_SIZE]
+	var shots_remaining := _match_model.get_shots_remaining()
+	if _attempt_active:
+		shots_remaining = max(0, shots_remaining - 1)
+	var score_line := "You: %d / %d  CPU: %d / %d" % [
+		_match_model.get_score(TURN_PLAYER),
+		MatchConstants.RACK_SIZE,
+		_match_model.get_score(TURN_COMPUTER),
+		MatchConstants.RACK_SIZE,
+	]
 	var cups_line := "Their cups: %d  Your cups: %d" % [_computer_rack_state.remaining_count(), _player_rack_state.remaining_count()]
 	if _game_over:
-		var result := "You win!" if _winner_turn == TURN_PLAYER else "Computer wins"
+		var result := "You win!" if _match_model.winner_slot == TURN_PLAYER else "Computer wins"
 		_status_label.text = "%s\n%s\nReturning to menu..." % [result, score_line]
 		return
 
@@ -508,13 +597,13 @@ func _update_status_label() -> void:
 		_status_label.text = "%s\n%s\nNext: %s" % [score_line, cups_line, _format_turn(_pending_turn)]
 		return
 
-	if _active_turn == TURN_PLAYER:
-		_status_label.text = "Your turn\nShots left: %d\n%s" % [_shots_remaining, score_line]
+	if _match_model.active_slot == TURN_PLAYER:
+		_status_label.text = "Your turn\nShots left: %d\n%s" % [shots_remaining, score_line]
 	else:
 		var summary := _last_computer_shot_summary
 		if summary.is_empty():
 			summary = "Computer is lining up."
-		_status_label.text = "Computer turn\nShots left: %d\n%s\n%s" % [_shots_remaining, score_line, summary]
+		_status_label.text = "Computer turn\nShots left: %d\n%s\n%s" % [shots_remaining, score_line, summary]
 
 
 func _format_turn(turn: int) -> String:

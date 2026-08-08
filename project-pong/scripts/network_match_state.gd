@@ -6,14 +6,18 @@ signal ball_authority_changed(player_id: int)
 signal match_state_changed(summary: String)
 
 const MatchConstants := preload("res://scripts/match/pong_match_constants.gd")
+const ClassicMatchModelScript := preload("res://scripts/match/classic_match_model.gd")
 const CupRackBuilderScript := preload("res://scripts/match/cup_rack_builder.gd")
 const RackStateScript := preload("res://scripts/match/rack_state.gd")
 const ShotPhysicsScript := preload("res://scripts/match/shot_physics.gd")
 const ShotScoreTrackerScript := preload("res://scripts/match/shot_score_tracker.gd")
 const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_evaluator.gd")
 const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
-const ShotOutcomeScript := preload("res://scripts/match/shot_outcome.gd")
+const HouseRulesProfileScript := preload("res://scripts/house_rules/house_rules_profile.gd")
 const HouseRulesSettingsStoreScript := preload("res://scripts/house_rules/house_rules_settings_store.gd")
+const ShotContextScript := preload("res://scripts/house_rules/shot_context.gd")
+const ShotContactTrackerScript := preload("res://scripts/house_rules/shot_contact_tracker.gd")
+const HouseRulesResolverScript := preload("res://scripts/house_rules/house_rules_resolver.gd")
 
 const PHASE_WAITING := "waiting"
 const PHASE_PLAYING := "playing"
@@ -62,12 +66,15 @@ var _player_one_cup_parent: Node3D
 var _player_two_cup_parent: Node3D
 var _score_label: Label3D
 var _local_player_id := 0
+var _match_model := ClassicMatchModelScript.new()
 var _scores_by_slot: Array[int] = [0, 0]
 var _scored_cups_by_slot: Dictionary = {PLAYER_ONE_SLOT: [], PLAYER_TWO_SLOT: []}
 var _rack_state_by_slot: Dictionary = {}
 var _scored_visual_keys: Dictionary = {}
 var _pending_cup_removals := CupRemovalQueueScript.new()
 var _house_rules_profile
+var _contact_tracker := ShotContactTrackerScript.new()
+var _last_shot_outcome: Dictionary = {}
 var _last_applied_version := 0
 var _next_state_version := 0
 var _shots_taken_this_turn := 0
@@ -86,6 +93,11 @@ func _ready() -> void:
 	_score_label = get_node_or_null(score_label_path) as Label3D
 	_house_rules_profile = HouseRulesSettingsStoreScript.load_profile()
 	print("[MatchState] Loaded House Rules profile %s." % _house_rules_profile.get_compact_ruleset_id())
+	_match_model.configure({
+		"shots_per_turn": shots_per_turn,
+		"rack_size": MatchConstants.RACK_SIZE,
+	})
+	_match_model.set_waiting()
 
 	_connect_ball()
 	_build_starting_racks()
@@ -115,6 +127,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_attempt_elapsed += delta
+	_contact_tracker.update(_attempt_elapsed)
 	if _try_confirm_score(delta):
 		return
 
@@ -134,7 +147,7 @@ func get_turn_shots_remaining() -> int:
 	if match_phase != PHASE_PLAYING:
 		return 0
 
-	return max(0, shots_per_turn - _shots_taken_this_turn)
+	return _match_model.get_shots_remaining()
 
 
 func get_status_text() -> String:
@@ -223,24 +236,27 @@ func _refresh_players() -> void:
 
 
 func _publish_start_match(first_player_id: int, second_player_id: int) -> void:
-	var scored_cups: Dictionary = {PLAYER_ONE_SLOT: [], PLAYER_TWO_SLOT: []}
+	_match_model.reset_for_match(PLAYER_TWO_SLOT)
+	var scored_cups := _match_model.get_scored_cups_by_slot()
 	_publish_snapshot({
 		"phase": PHASE_PLAYING,
 		"player_one_id": first_player_id,
 		"player_two_id": second_player_id,
 		"active_player_id": second_player_id,
 		"winner_player_id": 0,
-		"shots_taken_this_turn": 0,
-		"scores_by_slot": [0, 0],
+		"shots_taken_this_turn": _match_model.shots_taken_this_turn,
+		"scores_by_slot": _match_model.get_scores_by_slot(),
 		"scored_cups_slot_1": scored_cups[PLAYER_ONE_SLOT],
 		"scored_cups_slot_2": scored_cups[PLAYER_TWO_SLOT],
 		"reset_racks": true,
 		"ball_reset_delay": 0.0,
+		"last_shot_outcome": {},
 	})
 	print("[MatchState] Starting network match. Player %d throws first." % second_player_id)
 
 
 func _publish_waiting_snapshot() -> void:
+	_match_model.set_waiting()
 	var first_player_id := player_ids[0] if not player_ids.is_empty() else 0
 	var second_player_id := player_ids[1] if player_ids.size() > 1 else 0
 	_publish_snapshot({
@@ -255,10 +271,13 @@ func _publish_waiting_snapshot() -> void:
 		"scored_cups_slot_2": [],
 		"reset_racks": true,
 		"ball_reset_delay": 0.0,
+		"last_shot_outcome": {},
 	})
 
 
 func _publish_snapshot(snapshot: Dictionary) -> void:
+	if _house_rules_profile != null and not snapshot.has("house_rules_profile"):
+		snapshot["house_rules_profile"] = _house_rules_profile.to_dictionary()
 	_next_state_version = max(_next_state_version + 1, _last_applied_version + 1)
 	snapshot["version"] = _next_state_version
 	_apply_match_snapshot(snapshot)
@@ -292,6 +311,12 @@ func _apply_match_snapshot(snapshot: Dictionary) -> void:
 		PLAYER_ONE_SLOT: _read_int_array(snapshot.get("scored_cups_slot_1", [])),
 		PLAYER_TWO_SLOT: _read_int_array(snapshot.get("scored_cups_slot_2", [])),
 	}
+	_sync_model_from_network_state()
+	var profile_value: Variant = snapshot.get("house_rules_profile", {})
+	if profile_value is Dictionary:
+		_house_rules_profile = HouseRulesProfileScript.from_dictionary(profile_value)
+	var last_outcome_value: Variant = snapshot.get("last_shot_outcome", {})
+	_last_shot_outcome = last_outcome_value.duplicate(true) if last_outcome_value is Dictionary else {}
 
 	if bool(snapshot.get("reset_racks", false)):
 		_build_starting_racks()
@@ -324,6 +349,7 @@ func _on_ball_released(_grabber: Node3D, _release_linear_velocity: Vector3, _rel
 	_attempt_elapsed = 0.0
 	_ball_available = false
 	_clear_score_candidate()
+	_contact_tracker.start_attempt(_ball)
 	_update_ball_turn_configuration()
 	print("[MatchState] Player %d released shot %d of %d." % [
 		active_player_id,
@@ -346,57 +372,60 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 	if match_phase != PHASE_PLAYING:
 		return
 
-	var next_scores := _scores_by_slot.duplicate()
-	var next_scored_cups := _copy_scored_cups_by_slot()
-	var next_winner := 0
 	var active_slot := _get_player_slot(active_player_id)
 	var opponent_slot := _get_opponent_slot(active_slot)
-	var resolved_score := false
+	if active_slot <= 0 or opponent_slot <= 0:
+		return
 
+	var target_rack_state = _get_rack_state(opponent_slot)
+	var contact_summary = _contact_tracker.stop_and_get_summary(_attempt_elapsed)
+	var context = _build_shot_context(contact_summary, target_rack_state, active_slot, opponent_slot)
+	var valid_score := false
 	if was_score and scored_cup != null and is_instance_valid(scored_cup):
 		var scored_owner_slot := int(scored_cup.get_meta("owner_slot", 0))
 		var cup_index := int(scored_cup.get_meta("cup_index", -1))
-		var opponent_scored_cups: Array = next_scored_cups.get(opponent_slot, [])
-		if scored_owner_slot == opponent_slot and cup_index >= 0 and not opponent_scored_cups.has(cup_index):
-			opponent_scored_cups.append(cup_index)
-			opponent_scored_cups.sort()
-			next_scored_cups[opponent_slot] = opponent_scored_cups
-			next_scores[active_slot - 1] = min(MatchConstants.RACK_SIZE, int(next_scores[active_slot - 1]) + 1)
-			resolved_score = true
-			if opponent_scored_cups.size() >= MatchConstants.RACK_SIZE:
-				next_winner = active_player_id
+		var opponent_scored_cups := _read_int_array(_scored_cups_by_slot.get(opponent_slot, []))
+		valid_score = scored_owner_slot == opponent_slot and cup_index >= 0 and not opponent_scored_cups.has(cup_index)
 
-	var next_shots_taken := _shots_taken_this_turn + 1
-	var next_active_player := active_player_id
-	var next_phase := PHASE_PLAYING
-	if next_winner > 0:
-		next_phase = PHASE_COMPLETE
-	elif next_shots_taken >= shots_per_turn:
-		next_active_player = _get_opponent_player_id(active_player_id)
-		next_shots_taken = 0
-
-	var outcome := ShotOutcomeScript.for_attempt(
-		resolved_score,
-		scored_cup if resolved_score else null,
-		scored_reset_delay if resolved_score else reset_delay,
-		next_winner
+	var outcome := HouseRulesResolverScript.resolve_attempt(
+		context,
+		valid_score,
+		scored_cup if valid_score else null,
+		scored_reset_delay if valid_score else reset_delay,
+		0
 	)
+	_sync_model_from_network_state()
+	var transition := _match_model.apply_shot_outcome(active_slot, opponent_slot, outcome)
+	var next_scored_cups: Dictionary = transition.get("scored_cups_by_slot", _match_model.get_scored_cups_by_slot())
+	var next_scores := _read_two_ints(transition.get("scores_by_slot", _match_model.get_scores_by_slot()))
+	var next_winner_slot := int(transition.get("winner_slot", 0))
+	var next_winner := _get_player_id_for_slot(next_winner_slot)
+	var next_active_slot := int(transition.get("active_slot", 0))
+	var next_active_player := _get_player_id_for_slot(next_active_slot)
+	var next_phase := str(transition.get("phase", PHASE_PLAYING))
+	outcome["winner"] = next_winner
+
 	_publish_snapshot({
 		"phase": next_phase,
 		"player_one_id": player_one_id,
 		"player_two_id": player_two_id,
 		"active_player_id": next_active_player if next_phase == PHASE_PLAYING else 0,
 		"winner_player_id": next_winner,
-		"shots_taken_this_turn": next_shots_taken,
+		"shots_taken_this_turn": int(transition.get("shots_taken_this_turn", 0)),
 		"scores_by_slot": next_scores,
 		"scored_cups_slot_1": next_scored_cups[PLAYER_ONE_SLOT],
 		"scored_cups_slot_2": next_scored_cups[PLAYER_TWO_SLOT],
 		"reset_racks": false,
 		"ball_reset_delay": float(outcome.get("reset_delay", reset_delay)),
+		"last_shot_outcome": _snapshot_outcome(outcome),
 	})
 
-	if resolved_score:
-		print("[MatchState] Player %d scored. Scores: %s" % [active_player_id, next_scores])
+	if bool(transition.get("resolved_score", false)):
+		print("[MatchState] Player %d scored. Scores: %s.%s" % [
+			active_player_id,
+			next_scores,
+			_format_rule_triggers(outcome),
+		])
 	else:
 		print("[MatchState] Player %d missed." % active_player_id)
 
@@ -448,6 +477,7 @@ func _reset_ball_for_active_turn() -> void:
 	_attempt_active = false
 	_attempt_elapsed = 0.0
 	_clear_score_candidate()
+	_contact_tracker.clear()
 
 	if _ball == null or match_phase != PHASE_PLAYING or active_player_id == 0:
 		_ball_available = false
@@ -487,6 +517,7 @@ func _get_ball_spawn_transform(player_id: int) -> Transform3D:
 func _build_starting_racks() -> void:
 	CupRackBuilderScript.clear_cup_parent(_player_one_cup_parent)
 	CupRackBuilderScript.clear_cup_parent(_player_two_cup_parent)
+	_contact_tracker.clear()
 	_rack_state_by_slot = {
 		PLAYER_ONE_SLOT: RackStateScript.new(),
 		PLAYER_TWO_SLOT: RackStateScript.new(),
@@ -597,11 +628,80 @@ func _get_opponent_player_id(player_id: int) -> int:
 	return 0
 
 
+func _get_player_id_for_slot(slot: int) -> int:
+	if slot == PLAYER_ONE_SLOT:
+		return player_one_id
+	if slot == PLAYER_TWO_SLOT:
+		return player_two_id
+	return 0
+
+
+func _sync_model_from_network_state() -> void:
+	_match_model.configure({
+		"shots_per_turn": shots_per_turn,
+		"rack_size": MatchConstants.RACK_SIZE,
+	})
+	_match_model.load_state(
+		match_phase,
+		_get_player_slot(active_player_id),
+		_get_player_slot(winner_player_id),
+		_shots_taken_this_turn,
+		_scores_by_slot,
+		_scored_cups_by_slot
+	)
+
+
 func _copy_scored_cups_by_slot() -> Dictionary:
 	return {
 		PLAYER_ONE_SLOT: _read_int_array(_scored_cups_by_slot.get(PLAYER_ONE_SLOT, [])),
 		PLAYER_TWO_SLOT: _read_int_array(_scored_cups_by_slot.get(PLAYER_TWO_SLOT, [])),
 	}
+
+
+func _build_shot_context(contact_summary, target_rack_state, active_slot: int, opponent_slot: int):
+	var context = ShotContextScript.new()
+	context.mode_id = &"online_arena"
+	context.active_side = StringName("slot_%d" % active_slot)
+	context.opponent_side = &""
+	context.active_player_id = active_player_id
+	context.opponent_player_id = _get_opponent_player_id(active_player_id)
+	context.active_slot = active_slot
+	context.target_slot = opponent_slot
+	context.ball = _ball
+	context.target_rack_state = target_rack_state
+	context.rules_profile = _house_rules_profile
+	context.contact_summary = contact_summary
+	context.normal_shots_taken = _match_model.shots_taken_this_turn + 1
+	context.normal_shots_per_turn = shots_per_turn
+	return context
+
+
+func _filter_new_network_cup_indices(slot: int, values: Variant, already_scored: Array) -> Array[int]:
+	var result: Array[int] = []
+	for cup_index in _read_int_array(values):
+		if already_scored.has(cup_index) or result.has(cup_index):
+			continue
+		var rack_state = _get_rack_state(slot)
+		if rack_state == null or rack_state.is_scored(cup_index):
+			continue
+		if rack_state.get_cup(cup_index) == null:
+			continue
+		result.append(cup_index)
+	result.sort()
+	return result
+
+
+func _snapshot_outcome(outcome: Dictionary) -> Dictionary:
+	var snapshot := outcome.duplicate(true)
+	snapshot.erase("scored_cup")
+	return snapshot
+
+
+func _format_rule_triggers(outcome: Dictionary) -> String:
+	var triggers: Array = outcome.get("rule_triggers", [])
+	if triggers.is_empty():
+		return ""
+	return " Rules: %s" % [triggers]
 
 
 func _read_two_ints(values: Variant) -> Array[int]:
