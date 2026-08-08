@@ -1,7 +1,14 @@
 extends Node
 class_name SinglePlayerGame
 
-const CupTargetScript := preload("res://scripts/cup_target.gd")
+const MatchConstants := preload("res://scripts/match/pong_match_constants.gd")
+const CupRackBuilderScript := preload("res://scripts/match/cup_rack_builder.gd")
+const RackStateScript := preload("res://scripts/match/rack_state.gd")
+const ShotPhysicsScript := preload("res://scripts/match/shot_physics.gd")
+const ShotScoreTrackerScript := preload("res://scripts/match/shot_score_tracker.gd")
+const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_evaluator.gd")
+const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
+const ShotOutcomeScript := preload("res://scripts/match/shot_outcome.gd")
 
 @export var ball_path: NodePath
 @export var cup_parent_path: NodePath
@@ -29,10 +36,9 @@ var _ball_start_transform := Transform3D.IDENTITY
 var _attempt_active := false
 var _attempt_elapsed := 0.0
 var _reset_countdown := -1.0
-var _score_candidate: Node3D
-var _score_candidate_settled_elapsed := 0.0
-var _pending_scored_cup: Node3D
-var _cup_remove_countdown := -1.0
+var _rack_state := RackStateScript.new()
+var _score_tracker := ShotScoreTrackerScript.new()
+var _pending_cup_removals := CupRemovalQueueScript.new()
 var _score := 0
 var _cups_remaining := 0
 
@@ -81,29 +87,21 @@ func _physics_process(delta: float) -> void:
 
 
 func _build_starting_rack() -> void:
-	for child in _cup_parent.get_children():
-		child.queue_free()
-
+	CupRackBuilderScript.clear_cup_parent(_cup_parent)
 	_score = 0
-	_cups_remaining = 0
+	_pending_cup_removals.clear()
 
-	for row in range(4):
-		var cups_in_row := 4 - row
-		var row_width := float(cups_in_row - 1) * cup_spacing
-		var row_z := rack_origin.z + float(row) * cup_spacing * 0.92
-
-		for column in range(cups_in_row):
-			var cup := CupTargetScript.new()
-			cup.name = "Cup_%02d" % (_cups_remaining + 1)
-			cup.visual_scene = cup_visual_scene
-			cup.collision_scene = cup_collision_scene
-			cup.position = Vector3(
-				rack_origin.x - row_width * 0.5 + float(column) * cup_spacing,
-				rack_origin.y,
-				row_z
-			)
-			_cup_parent.add_child(cup)
-			_cups_remaining += 1
+	var cups := CupRackBuilderScript.build_triangular_rack(_cup_parent, {
+		"cup_visual_scene": cup_visual_scene,
+		"cup_collision_scene": cup_collision_scene,
+		"back_row_origin": rack_origin,
+		"row_direction_z": 1.0,
+		"cup_spacing": cup_spacing,
+		"name_prefix": "Cup",
+		"owner_side": MatchConstants.PRACTICE_SIDE,
+	})
+	_rack_state.configure(cups, 0, MatchConstants.PRACTICE_SIDE)
+	_cups_remaining = _rack_state.remaining_count()
 
 
 func _on_ball_released(_grabber: Node3D, _release_linear_velocity: Vector3, _release_angular_velocity: Vector3) -> void:
@@ -114,16 +112,19 @@ func _on_ball_released(_grabber: Node3D, _release_linear_velocity: Vector3, _rel
 
 func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 	_attempt_active = false
-	_reset_countdown = scored_reset_delay if was_score else reset_delay
-	_clear_score_candidate()
+	var outcome := ShotOutcomeScript.for_attempt(
+		was_score,
+		scored_cup,
+		scored_reset_delay if was_score else reset_delay
+	)
+	_reset_countdown = float(outcome.get("reset_delay", reset_delay))
+	_score_tracker.reset()
 
 	if was_score and scored_cup != null and is_instance_valid(scored_cup):
 		_score += 1
-		_cups_remaining = max(0, _cups_remaining - 1)
-		if scored_cup.has_method("mark_scored"):
-			scored_cup.call("mark_scored")
-		_pending_scored_cup = scored_cup
-		_cup_remove_countdown = cup_remove_delay
+		_rack_state.mark_cup_scored(scored_cup)
+		_cups_remaining = _rack_state.remaining_count()
+		_pending_cup_removals.queue_scored_cup(scored_cup, cup_remove_delay)
 		print("[Game] Score. %d cups remaining." % _cups_remaining)
 	else:
 		print("[Game] Miss. Resetting ball.")
@@ -132,18 +133,13 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 
 
 func _is_miss() -> bool:
-	var position := _ball.global_position
-	if position.y < miss_height:
-		return true
-	if absf(position.x) > out_of_bounds_x:
-		return true
-	if position.z < out_of_bounds_z_min or position.z > out_of_bounds_z_max:
-		return true
-	if _attempt_elapsed >= max_attempt_seconds:
-		return true
-	if _attempt_elapsed >= settled_after_seconds and _is_ball_settled() and _get_ball_resting_cup() == null:
-		return true
-	return false
+	return ShotAttemptEvaluatorScript.is_miss(
+		_ball,
+		_attempt_elapsed,
+		_get_attempt_bounds(),
+		_get_ball_resting_cup(),
+		_is_ball_settled()
+	)
 
 
 func _reset_ball() -> void:
@@ -163,55 +159,36 @@ func _update_score_label() -> void:
 
 func _try_confirm_score(delta: float) -> bool:
 	var resting_cup := _get_ball_resting_cup()
-	if resting_cup == null or not _is_ball_settled():
-		_clear_score_candidate()
+	var confirmed_cup := _score_tracker.update(delta, resting_cup, _is_ball_settled(), scoring_settle_seconds)
+	if confirmed_cup == null:
 		return false
 
-	if resting_cup != _score_candidate:
-		_score_candidate = resting_cup
-		_score_candidate_settled_elapsed = 0.0
-
-	_score_candidate_settled_elapsed += delta
-	if _score_candidate_settled_elapsed < scoring_settle_seconds:
-		return false
-
-	_resolve_attempt(true, resting_cup)
+	_resolve_attempt(true, confirmed_cup)
 	return true
 
 
 func _get_ball_resting_cup() -> Node3D:
-	if _cup_parent == null:
-		return null
-
-	for child in _cup_parent.get_children():
-		if child.has_method("is_ball_resting_inside") and child.call("is_ball_resting_inside", _ball):
-			return child as Node3D
-
-	return null
+	return _rack_state.find_resting_cup(_ball)
 
 
 func _is_ball_settled() -> bool:
-	return (
-		_ball.linear_velocity.length() <= settled_speed
-		and _ball.angular_velocity.length() <= settled_speed * 8.0
-	)
+	return ShotPhysicsScript.is_ball_settled(_ball, settled_speed)
 
 
 func _clear_score_candidate() -> void:
-	_score_candidate = null
-	_score_candidate_settled_elapsed = 0.0
+	_score_tracker.reset()
 
 
 func _update_pending_cup_removal(delta: float) -> void:
-	if _cup_remove_countdown < 0.0:
-		return
+	_pending_cup_removals.update(delta)
 
-	_cup_remove_countdown -= delta
-	if _cup_remove_countdown > 0.0:
-		return
 
-	_cup_remove_countdown = -1.0
-	if _pending_scored_cup != null and is_instance_valid(_pending_scored_cup):
-		if _pending_scored_cup.has_method("remove_from_game"):
-			_pending_scored_cup.call("remove_from_game")
-	_pending_scored_cup = null
+func _get_attempt_bounds() -> Dictionary:
+	return {
+		"miss_height": miss_height,
+		"out_of_bounds_x": out_of_bounds_x,
+		"out_of_bounds_z_min": out_of_bounds_z_min,
+		"out_of_bounds_z_max": out_of_bounds_z_max,
+		"settled_after_seconds": settled_after_seconds,
+		"max_attempt_seconds": max_attempt_seconds,
+	}

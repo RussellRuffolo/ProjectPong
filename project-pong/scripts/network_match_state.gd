@@ -5,7 +5,14 @@ signal players_changed(player_ids: Array[int])
 signal ball_authority_changed(player_id: int)
 signal match_state_changed(summary: String)
 
-const CupTargetScript := preload("res://scripts/cup_target.gd")
+const MatchConstants := preload("res://scripts/match/pong_match_constants.gd")
+const CupRackBuilderScript := preload("res://scripts/match/cup_rack_builder.gd")
+const RackStateScript := preload("res://scripts/match/rack_state.gd")
+const ShotPhysicsScript := preload("res://scripts/match/shot_physics.gd")
+const ShotScoreTrackerScript := preload("res://scripts/match/shot_score_tracker.gd")
+const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_evaluator.gd")
+const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
+const ShotOutcomeScript := preload("res://scripts/match/shot_outcome.gd")
 
 const PHASE_WAITING := "waiting"
 const PHASE_PLAYING := "playing"
@@ -56,9 +63,9 @@ var _score_label: Label3D
 var _local_player_id := 0
 var _scores_by_slot: Array[int] = [0, 0]
 var _scored_cups_by_slot: Dictionary = {PLAYER_ONE_SLOT: [], PLAYER_TWO_SLOT: []}
-var _rack_cups: Dictionary = {PLAYER_ONE_SLOT: [], PLAYER_TWO_SLOT: []}
+var _rack_state_by_slot: Dictionary = {}
 var _scored_visual_keys: Dictionary = {}
-var _pending_cup_removals: Array[Dictionary] = []
+var _pending_cup_removals := CupRemovalQueueScript.new()
 var _last_applied_version := 0
 var _next_state_version := 0
 var _shots_taken_this_turn := 0
@@ -66,8 +73,7 @@ var _attempt_active := false
 var _attempt_elapsed := 0.0
 var _reset_countdown := -1.0
 var _ball_available := false
-var _score_candidate: Node3D
-var _score_candidate_settled_elapsed := 0.0
+var _score_tracker := ShotScoreTrackerScript.new()
 
 
 func _ready() -> void:
@@ -129,22 +135,26 @@ func get_turn_shots_remaining() -> int:
 
 func get_status_text() -> String:
 	if match_phase == PHASE_COMPLETE:
-		return "%s wins\n%s: %d / 10  %s: %d / 10" % [
+		return "%s wins\n%s: %d / %d  %s: %d / %d" % [
 			_format_player(winner_player_id),
 			_format_player(player_one_id),
 			_scores_by_slot[0],
+			MatchConstants.RACK_SIZE,
 			_format_player(player_two_id),
 			_scores_by_slot[1],
+			MatchConstants.RACK_SIZE,
 		]
 
 	if match_phase == PHASE_PLAYING:
-		return "%s turn: %d throws\n%s: %d / 10  %s: %d / 10" % [
+		return "%s turn: %d throws\n%s: %d / %d  %s: %d / %d" % [
 			_format_player(active_player_id),
 			get_turn_shots_remaining(),
 			_format_player(player_one_id),
 			_scores_by_slot[0],
+			MatchConstants.RACK_SIZE,
 			_format_player(player_two_id),
 			_scores_by_slot[1],
+			MatchConstants.RACK_SIZE,
 		]
 
 	return "Waiting for second player\nPlayers: %s" % [player_ids]
@@ -320,19 +330,11 @@ func _on_ball_released(_grabber: Node3D, _release_linear_velocity: Vector3, _rel
 
 func _try_confirm_score(delta: float) -> bool:
 	var resting_cup := _get_ball_resting_opponent_cup()
-	if resting_cup == null or not _is_ball_settled():
-		_clear_score_candidate()
+	var confirmed_cup := _score_tracker.update(delta, resting_cup, _is_ball_settled(), scoring_settle_seconds)
+	if confirmed_cup == null:
 		return false
 
-	if resting_cup != _score_candidate:
-		_score_candidate = resting_cup
-		_score_candidate_settled_elapsed = 0.0
-
-	_score_candidate_settled_elapsed += delta
-	if _score_candidate_settled_elapsed < scoring_settle_seconds:
-		return false
-
-	_resolve_attempt(true, resting_cup)
+	_resolve_attempt(true, confirmed_cup)
 	return true
 
 
@@ -355,9 +357,9 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 			opponent_scored_cups.append(cup_index)
 			opponent_scored_cups.sort()
 			next_scored_cups[opponent_slot] = opponent_scored_cups
-			next_scores[active_slot - 1] = min(10, int(next_scores[active_slot - 1]) + 1)
+			next_scores[active_slot - 1] = min(MatchConstants.RACK_SIZE, int(next_scores[active_slot - 1]) + 1)
 			resolved_score = true
-			if opponent_scored_cups.size() >= 10:
+			if opponent_scored_cups.size() >= MatchConstants.RACK_SIZE:
 				next_winner = active_player_id
 
 	var next_shots_taken := _shots_taken_this_turn + 1
@@ -369,6 +371,12 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 		next_active_player = _get_opponent_player_id(active_player_id)
 		next_shots_taken = 0
 
+	var outcome := ShotOutcomeScript.for_attempt(
+		resolved_score,
+		scored_cup if resolved_score else null,
+		scored_reset_delay if resolved_score else reset_delay,
+		next_winner
+	)
 	_publish_snapshot({
 		"phase": next_phase,
 		"player_one_id": player_one_id,
@@ -380,7 +388,7 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 		"scored_cups_slot_1": next_scored_cups[PLAYER_ONE_SLOT],
 		"scored_cups_slot_2": next_scored_cups[PLAYER_TWO_SLOT],
 		"reset_racks": false,
-		"ball_reset_delay": scored_reset_delay if resolved_score else reset_delay,
+		"ball_reset_delay": float(outcome.get("reset_delay", reset_delay)),
 	})
 
 	if resolved_score:
@@ -390,22 +398,13 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 
 
 func _is_miss() -> bool:
-	if _ball == null:
-		return true
-
-	var position := _ball.global_position
-	if position.y < miss_height:
-		return true
-	if absf(position.x) > out_of_bounds_x:
-		return true
-	if position.z < out_of_bounds_z_min or position.z > out_of_bounds_z_max:
-		return true
-	if _attempt_elapsed >= max_attempt_seconds:
-		return true
-	if _attempt_elapsed >= settled_after_seconds and _is_ball_settled() and _get_ball_resting_opponent_cup() == null:
-		return true
-
-	return false
+	return ShotAttemptEvaluatorScript.is_miss(
+		_ball,
+		_attempt_elapsed,
+		_get_attempt_bounds(),
+		_get_ball_resting_opponent_cup(),
+		_is_ball_settled()
+	)
 
 
 func _get_ball_resting_opponent_cup() -> Node3D:
@@ -414,24 +413,12 @@ func _get_ball_resting_opponent_cup() -> Node3D:
 
 	var active_slot := _get_player_slot(active_player_id)
 	var opponent_slot := _get_opponent_slot(active_slot)
-	var cups: Array = _rack_cups.get(opponent_slot, [])
-	for cup in cups:
-		if cup == null or not is_instance_valid(cup):
-			continue
-		if cup.has_method("is_ball_resting_inside") and cup.call("is_ball_resting_inside", _ball):
-			return cup as Node3D
-
-	return null
+	var rack_state = _get_rack_state(opponent_slot)
+	return rack_state.find_resting_cup(_ball) if rack_state != null else null
 
 
 func _is_ball_settled() -> bool:
-	if _ball == null:
-		return false
-
-	return (
-		_ball.linear_velocity.length() <= settled_speed
-		and _ball.angular_velocity.length() <= settled_speed * 8.0
-	)
+	return ShotPhysicsScript.is_ball_settled(_ball, settled_speed)
 
 
 func _schedule_ball_reset(delay_seconds: float) -> void:
@@ -494,9 +481,12 @@ func _get_ball_spawn_transform(player_id: int) -> Transform3D:
 
 
 func _build_starting_racks() -> void:
-	_clear_cup_parent(_player_one_cup_parent)
-	_clear_cup_parent(_player_two_cup_parent)
-	_rack_cups = {PLAYER_ONE_SLOT: [], PLAYER_TWO_SLOT: []}
+	CupRackBuilderScript.clear_cup_parent(_player_one_cup_parent)
+	CupRackBuilderScript.clear_cup_parent(_player_two_cup_parent)
+	_rack_state_by_slot = {
+		PLAYER_ONE_SLOT: RackStateScript.new(),
+		PLAYER_TWO_SLOT: RackStateScript.new(),
+	}
 	_scored_visual_keys.clear()
 	_pending_cup_removals.clear()
 
@@ -507,99 +497,61 @@ func _build_starting_racks() -> void:
 	var half_length := table_length_meters * 0.5
 	var player_one_back_z := table_center_z + half_length - rack_back_row_offset_from_table_end
 	var player_two_back_z := table_center_z - half_length + rack_back_row_offset_from_table_end
-	_build_rack(PLAYER_ONE_SLOT, _player_one_cup_parent, Vector3(0.0, cup_height_y, player_one_back_z), -1.0)
-	_build_rack(PLAYER_TWO_SLOT, _player_two_cup_parent, Vector3(0.0, cup_height_y, player_two_back_z), 1.0)
-
-
-func _clear_cup_parent(parent: Node3D) -> void:
-	if parent == null:
-		return
-
-	for child in parent.get_children():
-		child.queue_free()
-
-
-func _build_rack(slot: int, parent: Node3D, back_row_origin: Vector3, row_direction_z: float) -> void:
-	var cup_index := 0
-	for row in range(4):
-		var cups_in_row := 4 - row
-		var row_width := float(cups_in_row - 1) * cup_spacing
-		var row_z := back_row_origin.z + row_direction_z * float(row) * cup_spacing * 0.92
-
-		for column in range(cups_in_row):
-			var cup := CupTargetScript.new()
-			cup.name = "P%dCup_%02d" % [slot, cup_index]
-			cup.visual_scene = cup_visual_scene
-			cup.collision_scene = cup_collision_scene
-			cup.position = Vector3(
-				back_row_origin.x - row_width * 0.5 + float(column) * cup_spacing,
-				back_row_origin.y,
-				row_z
-			)
-			cup.set_meta("owner_slot", slot)
-			cup.set_meta("cup_index", cup_index)
-			parent.add_child(cup)
-			_rack_cups[slot].append(cup)
-			cup_index += 1
+	var player_one_cups := CupRackBuilderScript.build_triangular_rack(_player_one_cup_parent, {
+		"cup_visual_scene": cup_visual_scene,
+		"cup_collision_scene": cup_collision_scene,
+		"back_row_origin": Vector3(0.0, cup_height_y, player_one_back_z),
+		"row_direction_z": -1.0,
+		"cup_spacing": cup_spacing,
+		"name_prefix": "P%dCup" % PLAYER_ONE_SLOT,
+		"owner_slot": PLAYER_ONE_SLOT,
+	})
+	var player_two_cups := CupRackBuilderScript.build_triangular_rack(_player_two_cup_parent, {
+		"cup_visual_scene": cup_visual_scene,
+		"cup_collision_scene": cup_collision_scene,
+		"back_row_origin": Vector3(0.0, cup_height_y, player_two_back_z),
+		"row_direction_z": 1.0,
+		"cup_spacing": cup_spacing,
+		"name_prefix": "P%dCup" % PLAYER_TWO_SLOT,
+		"owner_slot": PLAYER_TWO_SLOT,
+	})
+	_get_rack_state(PLAYER_ONE_SLOT).configure(player_one_cups, PLAYER_ONE_SLOT)
+	_get_rack_state(PLAYER_TWO_SLOT).configure(player_two_cups, PLAYER_TWO_SLOT)
 
 
 func _apply_scored_cups_to_racks() -> void:
 	for slot in [PLAYER_ONE_SLOT, PLAYER_TWO_SLOT]:
 		var scored_indices: Array = _scored_cups_by_slot.get(slot, [])
-		var cups: Array = _rack_cups.get(slot, [])
-		for cup in cups:
-			if cup == null or not is_instance_valid(cup):
-				continue
-
-			var cup_index := int(cup.get_meta("cup_index", -1))
-			if cup_index < 0 or not scored_indices.has(cup_index):
-				continue
-
+		for value in scored_indices:
+			var cup_index := int(value)
+			var cup := _get_cup(slot, cup_index)
 			_mark_cup_scored(slot, cup_index, cup)
 
 
 func _mark_cup_scored(slot: int, cup_index: int, cup: Node3D) -> void:
+	var rack_state = _get_rack_state(slot)
+	if rack_state != null:
+		rack_state.mark_scored(cup_index)
+
 	var key := _cup_key(slot, cup_index)
 	if _scored_visual_keys.has(key):
 		return
 
 	_scored_visual_keys[key] = true
-	if cup.has_method("mark_scored"):
-		cup.call("mark_scored")
-
-	_pending_cup_removals.append({
-		"slot": slot,
-		"cup_index": cup_index,
-		"countdown": cup_remove_delay,
-	})
+	_pending_cup_removals.queue_scored_cup_key(slot, cup_index, cup, cup_remove_delay)
 
 
 func _update_pending_cup_removals(delta: float) -> void:
-	for index in range(_pending_cup_removals.size() - 1, -1, -1):
-		_pending_cup_removals[index]["countdown"] = float(_pending_cup_removals[index]["countdown"]) - delta
-		if float(_pending_cup_removals[index]["countdown"]) > 0.0:
-			continue
-
-		var slot := int(_pending_cup_removals[index]["slot"])
-		var cup_index := int(_pending_cup_removals[index]["cup_index"])
-		var cup := _get_cup(slot, cup_index)
-		if cup != null and is_instance_valid(cup):
-			if cup.has_method("remove_from_game"):
-				cup.call("remove_from_game")
-			else:
-				cup.queue_free()
-		_pending_cup_removals.remove_at(index)
+	_pending_cup_removals.update(delta, Callable(self, "_get_cup"))
 
 
 func _get_cup(slot: int, cup_index: int) -> Node3D:
-	var cups: Array = _rack_cups.get(slot, [])
-	for cup in cups:
-		if cup == null or not is_instance_valid(cup):
-			continue
-		if int(cup.get_meta("cup_index", -1)) == cup_index:
-			return cup as Node3D
+	var rack_state = _get_rack_state(slot)
+	return rack_state.get_cup(cup_index) if rack_state != null else null
 
-	return null
+
+func _get_rack_state(slot: int):
+	return _rack_state_by_slot.get(slot, null)
 
 
 func _set_ball_authority(player_id: int) -> void:
@@ -678,8 +630,7 @@ func _format_player(player_id: int) -> String:
 
 
 func _clear_score_candidate() -> void:
-	_score_candidate = null
-	_score_candidate_settled_elapsed = 0.0
+	_score_tracker.reset()
 
 
 func _update_score_label() -> void:
@@ -687,3 +638,14 @@ func _update_score_label() -> void:
 		return
 
 	_score_label.text = get_status_text()
+
+
+func _get_attempt_bounds() -> Dictionary:
+	return {
+		"miss_height": miss_height,
+		"out_of_bounds_x": out_of_bounds_x,
+		"out_of_bounds_z_min": out_of_bounds_z_min,
+		"out_of_bounds_z_max": out_of_bounds_z_max,
+		"settled_after_seconds": settled_after_seconds,
+		"max_attempt_seconds": max_attempt_seconds,
+	}
