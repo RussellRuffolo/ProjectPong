@@ -4,6 +4,8 @@ class_name ThrowableBall
 signal grabbed(grabber: Node3D)
 signal released(grabber: Node3D, release_linear_velocity: Vector3, release_angular_velocity: Vector3)
 
+const MAX_SYNTHETIC_CONTACTS := 16
+
 @export_range(0.0, 1.0, 0.01) var bounce := 0.55
 @export_range(0.0, 1.0, 0.01) var friction := 0.12
 @export var held_gravity_scale := 0.0
@@ -14,12 +16,21 @@ signal released(grabber: Node3D, release_linear_velocity: Vector3, release_angul
 @export var release_spin := Vector3(0.0, 0.0, 8.0)
 @export var starts_suspended := true
 @export var can_be_grabbed := true
+@export var continuous_collision_detection := true
+
+var _synthetic_contacts: Array[Dictionary] = []
+var _default_collision_layer := 1
+var _default_collision_mask := 1
+var _capture_physics_suspended := false
 
 
 func _ready() -> void:
+	_default_collision_layer = collision_layer
+	_default_collision_mask = collision_mask
 	physics_material_override = _create_ball_material()
 	contact_monitor = true
 	max_contacts_reported = max(max_contacts_reported, 4)
+	continuous_cd = continuous_collision_detection
 	if starts_suspended:
 		_set_held_physics()
 	else:
@@ -28,6 +39,8 @@ func _ready() -> void:
 
 
 func on_grabbed(_grabber: Node3D) -> void:
+	restore_capture_physics()
+	clear_synthetic_contacts()
 	_set_held_physics()
 	sleeping = false
 	grabbed.emit(_grabber)
@@ -43,6 +56,8 @@ func on_released(_grabber: Node3D, release_linear_velocity: Vector3, _release_an
 
 
 func reset_to_transform(reset_transform: Transform3D, suspend_physics := true) -> void:
+	restore_capture_physics()
+	clear_synthetic_contacts()
 	freeze = false
 	global_transform = reset_transform
 	linear_velocity = Vector3.ZERO
@@ -61,6 +76,53 @@ func set_grabbable(is_grabbable: bool) -> void:
 
 func can_be_grabbed_by(_grabber: Node3D) -> bool:
 	return can_be_grabbed
+
+
+func record_synthetic_contact(contact: Dictionary) -> void:
+	if contact.is_empty():
+		return
+
+	_synthetic_contacts.append(contact.duplicate(true))
+	while _synthetic_contacts.size() > MAX_SYNTHETIC_CONTACTS:
+		_synthetic_contacts.pop_front()
+
+
+func drain_synthetic_contacts() -> Array[Dictionary]:
+	var drained: Array[Dictionary] = []
+	for contact in _synthetic_contacts:
+		drained.append(contact.duplicate(true))
+	_synthetic_contacts.clear()
+	return drained
+
+
+func clear_synthetic_contacts() -> void:
+	_synthetic_contacts.clear()
+
+
+func suspend_physics_for_capture() -> void:
+	if _capture_physics_suspended:
+		return
+
+	_capture_physics_suspended = true
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	collision_layer = 0
+	collision_mask = 0
+	continuous_cd = false
+	freeze = true
+	sleeping = true
+
+
+func restore_capture_physics() -> void:
+	if not _capture_physics_suspended:
+		return
+
+	_capture_physics_suspended = false
+	collision_layer = _default_collision_layer
+	collision_mask = _default_collision_mask
+	continuous_cd = continuous_collision_detection
+	freeze = false
+	sleeping = false
 
 
 func _create_ball_material() -> PhysicsMaterial:

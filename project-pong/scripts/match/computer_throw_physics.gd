@@ -2,6 +2,7 @@ extends RefCounted
 class_name ComputerThrowPhysics
 
 const ComputerTargetSelectorScript := preload("res://scripts/match/computer_target_selector.gd")
+const ShotPhysicsScript := preload("res://scripts/match/shot_physics.gd")
 
 
 static func select_target_cup(target_rack_state, heuristic: String, origin: Vector3, rng: RandomNumberGenerator = null) -> Node3D:
@@ -250,19 +251,7 @@ static func is_valid_launch_velocity(launch_velocity: Vector3) -> bool:
 
 
 static func get_ball_radius(ball: RigidBody3D) -> float:
-	if ball == null or not is_instance_valid(ball):
-		return 0.02
-
-	for child in ball.get_children():
-		var collision_shape := child as CollisionShape3D
-		if collision_shape == null or collision_shape.shape == null:
-			continue
-
-		var sphere_shape := collision_shape.shape as SphereShape3D
-		if sphere_shape != null:
-			return sphere_shape.radius
-
-	return 0.02
+	return ShotPhysicsScript.get_ball_radius(ball)
 
 
 static func _get_ball_flight_gravity_scale(ball: RigidBody3D) -> float:
