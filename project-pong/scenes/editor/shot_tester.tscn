@@ -1,0 +1,164 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/editor/shot_tester.gd" id="1_tester"]
+[ext_resource type="PackedScene" path="res://models/red_solo_cup.glb" id="2_cup_visual"]
+[ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="3_cup_collision"]
+[ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="4_surface"]
+[ext_resource type="Script" path="res://scripts/throwable_ball.gd" id="5_ball"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
+sky_horizon_color = Color(0.42, 0.47, 0.5, 1)
+ground_horizon_color = Color(0.16, 0.17, 0.18, 1)
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("ProceduralSkyMaterial_1")
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+ambient_light_source = 2
+ambient_light_color = Color(0.72, 0.74, 0.76, 1)
+ambient_light_energy = 0.72
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Floor"]
+albedo_color = Color(0.18, 0.2, 0.19, 1)
+roughness = 0.85
+
+[sub_resource type="BoxMesh" id="BoxMesh_Floor"]
+size = Vector3(4, 0.05, 4.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape_Floor"]
+size = Vector3(4, 0.05, 4.8)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Table"]
+albedo_color = Color(0.05, 0.43, 0.34, 1)
+roughness = 0.72
+
+[sub_resource type="BoxMesh" id="BoxMesh_Table"]
+size = Vector3(0.76, 0.06, 2.7432)
+
+[sub_resource type="BoxShape3D" id="BoxShape_Table"]
+size = Vector3(0.76, 0.06, 2.7432)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_RackMarker"]
+albedo_color = Color(0.18, 0.62, 1, 1)
+roughness = 0.62
+
+[sub_resource type="BoxMesh" id="BoxMesh_RackMarker"]
+size = Vector3(0.54, 0.018, 0.36)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_PingPongBall"]
+albedo_color = Color(1, 0.96, 0.82, 1)
+roughness = 0.72
+
+[sub_resource type="SphereMesh" id="SphereMesh_PingPongBall"]
+radius = 0.02
+height = 0.04
+
+[sub_resource type="SphereShape3D" id="SphereShape_PingPongBall"]
+radius = 0.02
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_AimIndicator"]
+albedo_color = Color(1, 0.9, 0.18, 1)
+emission_enabled = true
+emission = Color(1, 0.68, 0.05, 1)
+emission_energy_multiplier = 0.25
+roughness = 0.36
+
+[sub_resource type="SphereMesh" id="SphereMesh_AimIndicator"]
+radius = 0.045
+height = 0.09
+
+[node name="ShotTesterRoot" type="Node3D"]
+script = ExtResource("1_tester")
+target_cup_parent_path = NodePath("CupRacks/TargetCupRack")
+ball_path = NodePath("SimulationBall")
+aim_indicator_path = NodePath("AimIndicator")
+camera_path = NodePath("Camera3D")
+ui_root_path = NodePath("TestingUi/Root")
+cup_visual_scene = ExtResource("2_cup_visual")
+cup_collision_scene = ExtResource("3_cup_collision")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.353553, 0.612372, 0, 0.866025, 0.5, -0.707107, -0.353553, 0.612372, 0, 3, 0)
+light_energy = 1.15
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.766044, 0.642788, 0, -0.642788, 0.766044, 0, 2.7, 1.35)
+current = true
+fov = 62.0
+
+[node name="PhysicsSurfaces" type="Node3D" parent="."]
+
+[node name="Floor" type="StaticBody3D" parent="PhysicsSurfaces"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1.56)
+script = ExtResource("4_surface")
+surface_id = &"floor"
+bounce = 0.62
+friction = 0.82
+absorbs_ball_bounce = true
+rough = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Floor"]
+material_override = SubResource("StandardMaterial3D_Floor")
+mesh = SubResource("BoxMesh_Floor")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Floor"]
+shape = SubResource("BoxShape_Floor")
+
+[node name="Table" type="StaticBody3D" parent="PhysicsSurfaces"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -1.56)
+script = ExtResource("4_surface")
+surface_id = &"table"
+bounce = 0.04
+friction = 0.28
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Table"]
+material_override = SubResource("StandardMaterial3D_Table")
+mesh = SubResource("BoxMesh_Table")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Table"]
+shape = SubResource("BoxShape_Table")
+
+[node name="RackMarkers" type="Node3D" parent="."]
+
+[node name="TargetRackMarker" type="MeshInstance3D" parent="RackMarkers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.775, -2.77)
+material_override = SubResource("StandardMaterial3D_RackMarker")
+mesh = SubResource("BoxMesh_RackMarker")
+
+[node name="CupRacks" type="Node3D" parent="."]
+
+[node name="TargetCupRack" type="Node3D" parent="CupRacks"]
+
+[node name="SimulationBall" type="RigidBody3D" parent="." groups=["game_ball"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.18, -0.0484)
+mass = 0.0027
+gravity_scale = 0.0
+script = ExtResource("5_ball")
+can_be_grabbed = false
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="SimulationBall"]
+material_override = SubResource("StandardMaterial3D_PingPongBall")
+mesh = SubResource("SphereMesh_PingPongBall")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SimulationBall"]
+shape = SubResource("SphereShape_PingPongBall")
+
+[node name="AimIndicator" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.84, -2.6)
+material_override = SubResource("StandardMaterial3D_AimIndicator")
+mesh = SubResource("SphereMesh_AimIndicator")
+
+[node name="TestingUi" type="CanvasLayer" parent="."]
+
+[node name="Root" type="Control" parent="TestingUi"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
