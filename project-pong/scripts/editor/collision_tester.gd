@@ -30,6 +30,10 @@ const AXIS_Z := 2
 @export var axis_gizmo_radius := 0.0025
 @export var axis_gizmo_cone_length := 0.022
 @export var axis_gizmo_pick_radius_pixels := 28.0
+@export var normal_vector_enabled := true
+@export var normal_vector_color := Color(1.0, 0.68, 0.12, 1.0)
+@export var normal_vector_radius := 0.002
+@export var normal_vector_cone_length := 0.018
 
 var _cup_model: Node3D
 var _ball_model: Node3D
@@ -40,6 +44,10 @@ var _ui_root: Control
 var _frustum_material: ShaderMaterial
 var _ball_material: StandardMaterial3D
 var _axis_gizmo_root: Node3D
+var _normal_vector_root: Node3D
+var _normal_vector_shaft: MeshInstance3D
+var _normal_vector_tip: MeshInstance3D
+var _normal_vector_material: StandardMaterial3D
 var _ui_updating := false
 var _dragging_axis := -1
 var _drag_start_ball_position := Vector3.ZERO
@@ -47,6 +55,7 @@ var _drag_start_axis_parameter := 0.0
 var _last_ball_position := Vector3.ZERO
 var _has_last_ball_position := false
 var _last_intersection_snapshot: Dictionary = {}
+var _last_normal_snapshot: Dictionary = {}
 var _default_bottom_y := 0.0
 var _default_rim_y := 0.0
 var _default_bottom_radius := 0.0
@@ -55,6 +64,7 @@ var _default_radial_segments := 0
 var _default_ball_radius := 0.0
 
 var _visible_check: CheckBox
+var _normal_vector_check: CheckBox
 var _ui_panel: PanelContainer
 var _bottom_radius_spin: SpinBox
 var _rim_radius_spin: SpinBox
@@ -64,6 +74,7 @@ var _segments_spin: SpinBox
 var _ball_radius_spin: SpinBox
 var _summary_label: Label
 var _intersection_label: Label
+var _normal_vector_label: Label
 var _ball_position_label: Label
 
 
@@ -79,6 +90,7 @@ func _ready() -> void:
 	_create_ball_status_material()
 	_sync_ball_visual_radius()
 	_create_axis_gizmos()
+	_create_normal_vector_visual()
 	_rebuild_frustum_visual()
 	_apply_default_camera()
 	_build_ui()
@@ -159,15 +171,11 @@ func calculate_local_sphere_frustum_intersection(local_position: Vector3, radius
 	var radial_distance := Vector2(local_position.x, local_position.z).length()
 	var cross_section_point := Vector2(radial_distance, local_position.y)
 	var inside := _is_cross_section_point_inside_frustum(cross_section_point)
-	var closest_cross_section_point := cross_section_point
-	var closest_feature := "inside"
-	var distance_squared := 0.0
-
-	if not inside:
-		var closest := _get_closest_cross_section_point(cross_section_point)
-		closest_cross_section_point = closest["point"] as Vector2
-		closest_feature = str(closest["feature"])
-		distance_squared = cross_section_point.distance_squared_to(closest_cross_section_point)
+	var normal_snapshot := calculate_local_nearest_surface_snapshot(local_position)
+	var closest_cross_section_point: Vector2 = normal_snapshot.get("nearest_cross_section_point", cross_section_point)
+	var closest_feature := str(normal_snapshot.get("closest_feature", "inside"))
+	var distance := float(normal_snapshot.get("distance_to_surface", 0.0))
+	var distance_squared := distance * distance
 
 	return {
 		"intersects": inside or distance_squared <= safe_radius * safe_radius + EPSILON,
@@ -177,8 +185,47 @@ func calculate_local_sphere_frustum_intersection(local_position: Vector3, radius
 		"radial_distance": radial_distance,
 		"closest_feature": closest_feature,
 		"closest_cross_section_point": closest_cross_section_point,
-		"distance_to_frustum": sqrt(distance_squared),
-		"clearance": sqrt(distance_squared) - safe_radius,
+		"nearest_local_point": normal_snapshot.get("nearest_local_point", Vector3.ZERO),
+		"normal_local": normal_snapshot.get("normal_local", Vector3.UP),
+		"normal_world": normal_snapshot.get("normal_world", Vector3.UP),
+		"signed_center_distance": normal_snapshot.get("signed_center_distance", 0.0),
+		"distance_to_frustum": distance,
+		"clearance": distance - safe_radius,
+	}
+
+
+func calculate_local_nearest_surface_snapshot(local_position: Vector3) -> Dictionary:
+	var radial := Vector2(local_position.x, local_position.z)
+	var radial_distance := radial.length()
+	var radial_direction := Vector2(1.0, 0.0) if radial_distance <= EPSILON else radial / radial_distance
+	var cross_section_point := Vector2(radial_distance, local_position.y)
+	var closest := _get_closest_cross_section_point(cross_section_point)
+	var nearest_cross_section_point := closest["point"] as Vector2
+	var nearest_local_point := Vector3(
+		radial_direction.x * nearest_cross_section_point.x,
+		nearest_cross_section_point.y,
+		radial_direction.y * nearest_cross_section_point.x
+	)
+	var to_ball := local_position - nearest_local_point
+	var distance := to_ball.length()
+	var normal_local := to_ball / distance if distance > EPSILON else _get_fallback_normal_for_feature(
+		str(closest["feature"]),
+		nearest_local_point,
+		radial_direction
+	)
+	var inside := _is_cross_section_point_inside_frustum(cross_section_point)
+	var signed_distance := -distance if inside else distance
+
+	return {
+		"nearest_local_point": nearest_local_point,
+		"nearest_world_point": global_transform * nearest_local_point,
+		"nearest_cross_section_point": nearest_cross_section_point,
+		"normal_local": normal_local,
+		"normal_world": _to_world_normal(normal_local),
+		"distance_to_surface": distance,
+		"signed_center_distance": signed_distance,
+		"closest_feature": str(closest["feature"]),
+		"inside": inside,
 	}
 
 
@@ -348,6 +395,45 @@ func _create_axis_material(axis_color: Color) -> StandardMaterial3D:
 	return material
 
 
+func _create_normal_vector_visual() -> void:
+	if _normal_vector_root != null and is_instance_valid(_normal_vector_root):
+		_normal_vector_root.queue_free()
+
+	_normal_vector_material = StandardMaterial3D.new()
+	_normal_vector_material.albedo_color = normal_vector_color
+	_normal_vector_material.emission_enabled = true
+	_normal_vector_material.emission = normal_vector_color
+	_normal_vector_material.emission_energy_multiplier = 0.45
+	_normal_vector_material.roughness = 0.38
+
+	_normal_vector_root = Node3D.new()
+	_normal_vector_root.name = "NormalVector"
+	_normal_vector_root.visible = normal_vector_enabled
+	add_child(_normal_vector_root)
+
+	var shaft_mesh := CylinderMesh.new()
+	shaft_mesh.top_radius = normal_vector_radius
+	shaft_mesh.bottom_radius = normal_vector_radius
+	shaft_mesh.height = 1.0
+	shaft_mesh.radial_segments = 12
+	_normal_vector_shaft = MeshInstance3D.new()
+	_normal_vector_shaft.name = "Shaft"
+	_normal_vector_shaft.mesh = shaft_mesh
+	_normal_vector_shaft.material_override = _normal_vector_material
+	_normal_vector_root.add_child(_normal_vector_shaft)
+
+	var tip_mesh := CylinderMesh.new()
+	tip_mesh.top_radius = 0.0
+	tip_mesh.bottom_radius = normal_vector_radius * 3.5
+	tip_mesh.height = 1.0
+	tip_mesh.radial_segments = 16
+	_normal_vector_tip = MeshInstance3D.new()
+	_normal_vector_tip.name = "Arrow"
+	_normal_vector_tip.mesh = tip_mesh
+	_normal_vector_tip.material_override = _normal_vector_material
+	_normal_vector_root.add_child(_normal_vector_tip)
+
+
 func _rebuild_frustum_visual() -> void:
 	if _frustum_visual == null:
 		return
@@ -458,6 +544,11 @@ func _build_ui() -> void:
 	_visible_check.toggled.connect(_on_visibility_toggled)
 	main_vbox.add_child(_visible_check)
 
+	_normal_vector_check = CheckBox.new()
+	_normal_vector_check.text = "Show normal vector"
+	_normal_vector_check.toggled.connect(_on_normal_vector_visibility_toggled)
+	main_vbox.add_child(_normal_vector_check)
+
 	_bottom_radius_spin = _add_spin_row(main_vbox, "Bottom Radius", bottom_radius, 0.001, 0.12, 0.001, _on_bottom_radius_changed)
 	_rim_radius_spin = _add_spin_row(main_vbox, "Rim Radius", rim_radius, 0.001, 0.14, 0.001, _on_rim_radius_changed)
 	_bottom_y_spin = _add_spin_row(main_vbox, "Bottom Y", bottom_y, -0.05, 0.2, 0.001, _on_bottom_y_changed)
@@ -468,6 +559,10 @@ func _build_ui() -> void:
 	_intersection_label = Label.new()
 	_intersection_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	main_vbox.add_child(_intersection_label)
+
+	_normal_vector_label = Label.new()
+	_normal_vector_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	main_vbox.add_child(_normal_vector_label)
 
 	_ball_position_label = Label.new()
 	_ball_position_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -516,6 +611,8 @@ func _refresh_ui() -> void:
 	_ui_updating = true
 	if _visible_check != null:
 		_visible_check.button_pressed = visualization_enabled
+	if _normal_vector_check != null:
+		_normal_vector_check.button_pressed = normal_vector_enabled
 	if _bottom_radius_spin != null:
 		_bottom_radius_spin.value = bottom_radius
 	if _rim_radius_spin != null:
@@ -532,6 +629,8 @@ func _refresh_ui() -> void:
 		_summary_label.text = "r(y) %.3f to %.3f, height %.3f m" % [bottom_radius, rim_radius, _get_height()]
 	if _intersection_label != null:
 		_intersection_label.text = _format_intersection_status()
+	if _normal_vector_label != null:
+		_normal_vector_label.text = _format_normal_vector_status()
 	if _ball_position_label != null:
 		_ball_position_label.text = _format_ball_position_status()
 	_ui_updating = false
@@ -541,6 +640,14 @@ func _on_visibility_toggled(is_enabled: bool) -> void:
 	if _ui_updating:
 		return
 	set_visualization_enabled(is_enabled)
+
+
+func _on_normal_vector_visibility_toggled(is_enabled: bool) -> void:
+	if _ui_updating:
+		return
+	normal_vector_enabled = is_enabled
+	_update_normal_vector_visual()
+	_refresh_ui()
 
 
 func _on_bottom_radius_changed(value: float) -> void:
@@ -716,6 +823,10 @@ func _get_world_axis_direction(axis_index: int) -> Vector3:
 	return (global_transform.basis * _get_local_axis_direction(axis_index)).normalized()
 
 
+func _to_world_normal(local_normal: Vector3) -> Vector3:
+	return (global_transform.basis * local_normal).normalized()
+
+
 func _get_local_axis_direction(axis_index: int) -> Vector3:
 	match axis_index:
 		AXIS_X:
@@ -740,9 +851,11 @@ func _update_ball_intersection() -> void:
 		return
 
 	_last_intersection_snapshot = calculate_ball_frustum_intersection(_ball_model.global_position, ball_radius)
+	_last_normal_snapshot = calculate_local_nearest_surface_snapshot(global_transform.affine_inverse() * _ball_model.global_position)
 	_last_ball_position = _ball_model.global_position
 	_has_last_ball_position = true
 	_apply_ball_status_color(bool(_last_intersection_snapshot.get("intersects", false)))
+	_update_normal_vector_visual()
 	_refresh_ui()
 
 
@@ -802,6 +915,50 @@ func _get_closest_cross_section_point(point: Vector2) -> Dictionary:
 	return best
 
 
+func _get_fallback_normal_for_feature(feature: String, nearest_local_point: Vector3, radial_direction: Vector2) -> Vector3:
+	match feature:
+		"side_wall":
+			return get_side_normal_at_local_position(nearest_local_point)
+		"bottom_cap":
+			return Vector3.DOWN
+		"top_cap":
+			return Vector3.UP
+
+	return Vector3(radial_direction.x, 0.0, radial_direction.y).normalized()
+
+
+func _update_normal_vector_visual() -> void:
+	if _normal_vector_root == null:
+		return
+
+	if not normal_vector_enabled or _last_normal_snapshot.is_empty():
+		_normal_vector_root.visible = false
+		return
+
+	if _ball_model == null:
+		_normal_vector_root.visible = false
+		return
+
+	var start_local := global_transform.affine_inverse() * _ball_model.global_position
+	var normal_local: Vector3 = _last_normal_snapshot.get("normal_local", Vector3.UP)
+	var vector_length := maxf(axis_gizmo_length, normal_vector_cone_length + EPSILON)
+	var direction := normal_local.normalized()
+	if direction.length_squared() <= EPSILON:
+		direction = Vector3.UP
+
+	var cone_length := minf(normal_vector_cone_length, vector_length * 0.45)
+	var shaft_length := maxf(vector_length - cone_length, EPSILON)
+	_normal_vector_root.visible = true
+	_normal_vector_root.transform = Transform3D(_get_basis_with_local_y(direction), start_local)
+
+	if _normal_vector_shaft != null:
+		_normal_vector_shaft.position = Vector3(0.0, shaft_length * 0.5, 0.0)
+		_normal_vector_shaft.scale = Vector3(1.0, shaft_length, 1.0)
+	if _normal_vector_tip != null:
+		_normal_vector_tip.position = Vector3(0.0, shaft_length + cone_length * 0.5, 0.0)
+		_normal_vector_tip.scale = Vector3(1.0, cone_length, 1.0)
+
+
 func _get_closest_point_on_segment_2d(point: Vector2, segment_start: Vector2, segment_end: Vector2) -> Vector2:
 	var segment := segment_end - segment_start
 	var segment_length_squared := segment.length_squared()
@@ -829,6 +986,24 @@ func _format_intersection_status() -> String:
 		feature,
 		distance,
 		clearance,
+	]
+
+
+func _format_normal_vector_status() -> String:
+	if _last_normal_snapshot.is_empty():
+		return "Normal: unavailable"
+
+	var nearest: Vector3 = _last_normal_snapshot.get("nearest_local_point", Vector3.ZERO)
+	var normal: Vector3 = _last_normal_snapshot.get("normal_local", Vector3.UP)
+	var signed_distance := float(_last_normal_snapshot.get("signed_center_distance", 0.0))
+	return "Normal: point (%.3f, %.3f, %.3f) dir (%.2f, %.2f, %.2f) signed %.3f m" % [
+		nearest.x,
+		nearest.y,
+		nearest.z,
+		normal.x,
+		normal.y,
+		normal.z,
+		signed_distance,
 	]
 
 

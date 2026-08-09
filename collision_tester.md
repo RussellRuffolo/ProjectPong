@@ -32,6 +32,8 @@ The scene should stay small, visual, and fast to iterate on. It is a proving gro
 - Ball/frustum intersection is calculated from the ball center point plus `ball_radius`.
 - The current intersection test reduces the rotationally symmetric frustum to a 2D radial/Y cross-section and compares the sphere radius against the closest point on the closed frustum profile.
 - The ball turns green when it intersects the frustum and red when it does not.
+- A toggleable normal vector visualization draws a fixed-length visual-only arrow from the ball center along the nearest-surface normal.
+- The normal vector readout shows nearest local point, local direction, and signed center distance.
 - Runtime axis gizmos are parented to the ball:
   - Red axis: local/world X.
   - Green axis: local/world Y.
@@ -81,12 +83,15 @@ When modifying `Collision_Tester`, Codex agents should:
 
 ### 1. Normal Vector Visualization
 
-Add a visible vector from the nearest point on the conic frustum surface toward the ball center.
+Add a visible vector from the ball center along the nearest-surface normal.
+
+First pass status: implemented in `res://scripts/editor/collision_tester.gd`.
 
 Expected behavior:
 
-- When the ball is outside the frustum, draw the vector from the nearest frustum point to the ball center.
+- When the ball is outside the frustum, draw the vector from the ball center along the direction from the nearest frustum point through the ball center.
 - When the ball intersects or is inside the frustum, still show the relevant normal/contact direction where useful for tuning.
+- Use a fixed visual length matching the axis gizmo arrows so the vector remains readable near and far from the surface.
 - Show or hide the normal vector from the UI.
 - Include readouts for:
   - nearest point
