@@ -72,7 +72,7 @@ Not implemented yet:
 - `res://scripts/match/cup_removal_queue.gd` owns delayed visual removal for local cup references and network slot/index lookups.
 - `res://scripts/match/computer_target_selector.gd` provides swappable computer target selection using `most_central` and `closest` heuristics. Classic Match exposes this via `computer_target_heuristic`; computer throw execution and accuracy offset remain in `classic_match_game.gd`.
 - `res://scripts/match/classic_match_model.gd` owns shared classic-match logical state: active slot, shots taken, scores, scored cup indices, turn advancement, and winner detection. Classic Match, Online Arena, and the editor-only computer-vs-computer simulation use it so shot outcomes mutate match state consistently.
-- `res://scenes/editor/computer_classic_match.tscn` is an editor-only CPU-vs-CPU classic match simulation. It builds real cup racks, uses `ComputerTargetSelector`, resolves virtual shots through `HouseRulesResolver`, exposes custom House Rules profile controls, and provides `run_automatic_test()`, `step_simulation()`, and `get_test_snapshot()` for Codex validation.
+- `res://scenes/editor/computer_classic_match.tscn` is an editor-only CPU-vs-CPU classic match simulation. It builds real cup racks, launches visible `ThrowableBall` rigid bodies through the same shared computer throw helper used by Classic Match, resolves physics-confirmed scores/misses through `HouseRulesResolver`, exposes custom House Rules profile controls, and provides `run_automatic_test()`, `step_simulation()`, and `get_test_snapshot()` for Codex validation.
 
 ## Design Goals
 
@@ -293,7 +293,7 @@ First-pass local validation:
 - Practice smoke validation loaded with 10 cups and logged the default `hr1-11111111` House Rules profile.
 - Classic Match smoke validation loaded with 10 cups per side, started the player's two-shot turn, and logged the default `hr1-11111111` House Rules profile.
 - Online Arena smoke validation loaded the networked scene, initialized Photon Fusion Godot SDK `3.0.0.2787`, began connecting, then disconnected during local validation. This remains a local networking validation caveat, not evidence of rule behavior.
-- Computer Classic Match automatic validation runs with `.\Godot_v4.7.1-stable_win64_console.exe --headless --xr-mode off --path project-pong --scene res://scenes/editor/computer_classic_match.tscn --log-file codex-computer-classic-auto.log -- --codex-auto-test --codex-max-shots=160`. The current deterministic smoke completes a CPU-vs-CPU match and reports a JSON snapshot with `passed: true` when shared-model scores and scored cup indices stay consistent.
+- Computer Classic Match automatic validation runs with `.\Godot_v4.7.1-stable_win64_console.exe --headless --xr-mode off --path project-pong --scene res://scenes/editor/computer_classic_match.tscn --log-file codex-computer-classic-auto.log -- --codex-auto-test`. The current deterministic smoke resolves physical CPU-vs-CPU shots, requires at least one real score by default, and reports a JSON snapshot with `passed: true` when shared-model scores and scored cup indices stay consistent. Add `--codex-require-complete` to require a full physical match completion.
 
 Known local environment warnings:
 

@@ -9,7 +9,9 @@ const ShotPhysicsScript := preload("res://scripts/match/shot_physics.gd")
 const ShotScoreTrackerScript := preload("res://scripts/match/shot_score_tracker.gd")
 const ShotAttemptEvaluatorScript := preload("res://scripts/match/shot_attempt_evaluator.gd")
 const CupRemovalQueueScript := preload("res://scripts/match/cup_removal_queue.gd")
-const ComputerTargetSelectorScript := preload("res://scripts/match/computer_target_selector.gd")
+const ComputerPlayerProfileScript := preload("res://scripts/match/computer_player_profile.gd")
+const ComputerThrowPlannerScript := preload("res://scripts/match/computer_throw_planner.gd")
+const ComputerThrowPhysicsScript := preload("res://scripts/match/computer_throw_physics.gd")
 const HouseRulesSettingsStoreScript := preload("res://scripts/house_rules/house_rules_settings_store.gd")
 const ShotContextScript := preload("res://scripts/house_rules/shot_context.gd")
 const ShotContactTrackerScript := preload("res://scripts/house_rules/shot_contact_tracker.gd")
@@ -46,6 +48,7 @@ const COMPUTER_TARGET_MOST_CENTRAL := "most_central"
 @export var cup_remove_delay := 0.65
 @export var turn_transition_delay := 0.85
 @export var computer_shot_delay := 1.1
+@export var computer_player_profile: Resource
 @export_enum("most_central", "closest") var computer_target_heuristic := COMPUTER_TARGET_MOST_CENTRAL
 @export_range(0.0, 0.35, 0.005) var computer_accuracy_error_radius := 0 # 0.055
 @export var computer_throw_arc_height := 0.42
@@ -65,6 +68,7 @@ var _house_rules_profile
 var _contact_tracker := ShotContactTrackerScript.new()
 var _score_tracker := ShotScoreTrackerScript.new()
 var _rng := RandomNumberGenerator.new()
+var _computer_profile
 var _attempt_active := false
 var _attempt_elapsed := 0.0
 var _reset_countdown := -1.0
@@ -74,6 +78,7 @@ var _computer_shot_countdown := -1.0
 var _game_over := false
 var _return_countdown := -1.0
 var _last_computer_shot_summary := ""
+var _computer_throw_plan: Dictionary = {}
 
 
 func _ready() -> void:
@@ -90,7 +95,9 @@ func _ready() -> void:
 		return
 
 	_house_rules_profile = HouseRulesSettingsStoreScript.load_profile()
+	_computer_profile = _resolve_computer_profile()
 	print("[ClassicMatch] Loaded House Rules profile %s." % _house_rules_profile.get_compact_ruleset_id())
+	print("[ClassicMatch] Loaded computer profile %s." % _computer_profile.get_profile_id_string())
 	_rng.randomize()
 	_ball.released.connect(_on_ball_released)
 	_match_model.configure({
@@ -170,6 +177,7 @@ func _start_computer_turn() -> void:
 	_reset_countdown = -1.0
 	_turn_transition_countdown = -1.0
 	_computer_shot_countdown = computer_shot_delay
+	_computer_throw_plan.clear()
 	_clear_score_candidate()
 	_set_ball_grabbable(false)
 	_ball.reset_to_transform(_get_computer_ball_spawn_transform(), true)
@@ -233,6 +241,9 @@ func _update_computer_turn(delta: float) -> void:
 	_attempt_elapsed += delta
 	_contact_tracker.update(_attempt_elapsed)
 	if _try_confirm_score(delta, _player_rack_state, Callable(self, "_resolve_computer_attempt")):
+		return
+
+	if _try_confirm_planned_computer_score(_player_rack_state):
 		return
 
 	if _is_miss(_player_rack_state):
@@ -305,8 +316,18 @@ func _execute_computer_throw() -> void:
 		_schedule_turn(TURN_PLAYER, turn_transition_delay)
 		return
 
-	var target_cup := _select_computer_target_cup()
-	if target_cup == null:
+	var throw_transform := _get_computer_ball_spawn_transform()
+	var throw_plan := ComputerThrowPlannerScript.build_throw_plan({
+		"profile": _computer_profile,
+		"target_rack_state": _player_rack_state,
+		"ball": _ball,
+		"launch_transform": throw_transform,
+		"rng": _rng,
+		"house_rules_profile": _house_rules_profile,
+		"attempt_bounds": _get_attempt_bounds(),
+		"table_bounds": _get_table_bounds(),
+	})
+	if not bool(throw_plan.get("success", false)):
 		_schedule_turn(TURN_PLAYER, turn_transition_delay)
 		return
 
@@ -314,17 +335,20 @@ func _execute_computer_throw() -> void:
 	_attempt_elapsed = 0.0
 	_clear_score_candidate()
 
-	var target_position := _get_computer_aim_position(target_cup)
-	var release_velocity := _calculate_computer_throw_velocity(_get_computer_ball_spawn_transform().origin, target_position)
-	_ball.reset_to_transform(_get_computer_ball_spawn_transform(), false)
-	_ball.linear_velocity = release_velocity
-	_ball.angular_velocity = _ball.release_spin
-	_ball.sleeping = false
+	var target_cup := throw_plan.get("target_cup", null) as Node3D
+	var release_velocity: Vector3 = throw_plan.get("launch_velocity", Vector3.ZERO)
+	_computer_throw_plan = _serialize_throw_plan(throw_plan)
+	ComputerThrowPhysicsScript.launch_ball(_ball, throw_transform, release_velocity)
 	_contact_tracker.start_attempt(_ball)
-	_last_computer_shot_summary = "Computer aimed at %s." % target_cup.name
+	_last_computer_shot_summary = "Computer %s aimed at %s." % [
+		str(throw_plan.get("shot_type", "direct")),
+		target_cup.name if target_cup != null else "a cup",
+	]
 	_update_status_label()
-	print("[ClassicMatch] Computer threw at %s with velocity %s. %d shots remaining." % [
-		target_cup.name,
+	print("[ClassicMatch] Computer profile %s threw a %s shot at cup %d with velocity %s. %d shots remaining." % [
+		str(throw_plan.get("profile_id", "")),
+		str(throw_plan.get("shot_type", "direct")),
+		int(throw_plan.get("target_cup_index", -1)),
 		release_velocity,
 		max(0, _match_model.get_shots_remaining() - 1),
 	])
@@ -341,6 +365,7 @@ func _resolve_computer_attempt(was_score: bool, scored_cup: Node3D) -> void:
 	)
 	var transition := _match_model.apply_shot_outcome(TURN_COMPUTER, TURN_PLAYER, outcome)
 	_score_tracker.reset()
+	_computer_throw_plan.clear()
 
 	var resolved_score := bool(transition.get("resolved_score", false))
 	if resolved_score:
@@ -407,52 +432,6 @@ func _get_ball_resting_cup(target_rack_state) -> Node3D:
 	return target_rack_state.find_resting_cup(_ball)
 
 
-func _select_computer_target_cup() -> Node3D:
-	return ComputerTargetSelectorScript.select_target(
-		_player_rack_state,
-		computer_target_heuristic,
-		_get_computer_ball_spawn_transform().origin
-	)
-
-
-func _get_computer_aim_position(target_cup: Node3D) -> Vector3:
-	var aim_position := _get_cup_top_center_position(target_cup) + Vector3.UP * computer_aim_top_clearance
-	if computer_accuracy_error_radius <= 0.0:
-		return aim_position
-
-	var miss_angle := _rng.randf_range(0.0, TAU)
-	var miss_distance := sqrt(_rng.randf()) * computer_accuracy_error_radius
-	aim_position.x += cos(miss_angle) * miss_distance
-	aim_position.z += sin(miss_angle) * miss_distance
-	return aim_position
-
-
-func _get_cup_top_center_position(cup: Node3D) -> Vector3:
-	if cup.has_method("get_top_center_position"):
-		var top_position = cup.call("get_top_center_position")
-		if top_position is Vector3:
-			return top_position
-	return cup.global_position
-
-
-func _calculate_computer_throw_velocity(start_position: Vector3, target_position: Vector3) -> Vector3:
-	var gravity_scale := _ball.flight_gravity_scale if _ball != null else 1.0
-	var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)) * gravity_scale
-	gravity = maxf(gravity, 0.01)
-	var peak_y := maxf(start_position.y, target_position.y) + maxf(0.01, computer_throw_arc_height)
-	var vertical_speed := sqrt(2.0 * gravity * maxf(0.01, peak_y - start_position.y))
-	var time_up := vertical_speed / gravity
-	var time_down := sqrt(2.0 * maxf(0.01, peak_y - target_position.y) / gravity)
-	var travel_time := maxf(0.1, time_up + time_down)
-	var horizontal_delta := target_position - start_position
-	horizontal_delta.y = 0.0
-	return Vector3(
-		horizontal_delta.x / travel_time,
-		vertical_speed,
-		horizontal_delta.z / travel_time
-	)
-
-
 func _is_miss(target_rack_state) -> bool:
 	return ShotAttemptEvaluatorScript.is_miss(
 		_ball,
@@ -482,6 +461,7 @@ func _reset_ball_for_computer() -> void:
 	_reset_countdown = -1.0
 	_attempt_active = false
 	_attempt_elapsed = 0.0
+	_computer_throw_plan.clear()
 	_clear_score_candidate()
 	_contact_tracker.clear()
 	_ball.reset_to_transform(_get_computer_ball_spawn_transform(), true)
@@ -495,6 +475,17 @@ func _get_player_ball_spawn_transform() -> Transform3D:
 
 func _get_computer_ball_spawn_transform() -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, ball_spawn_height, computer_ball_spawn_z))
+
+
+func _resolve_computer_profile():
+	if computer_player_profile != null:
+		return computer_player_profile
+
+	var profile = ComputerPlayerProfileScript.default_profile()
+	profile = profile.duplicate_profile()
+	profile.target_heuristic = computer_target_heuristic
+	profile.direct_aim_error_radius = computer_accuracy_error_radius
+	return profile
 
 
 func _set_ball_grabbable(is_grabbable: bool) -> void:
@@ -540,6 +531,61 @@ func _resolve_house_rule_attempt(was_score: bool, scored_cup: Node3D, target_rac
 		scored_cup,
 		scored_reset_delay if was_score else reset_delay
 	)
+
+
+func _try_confirm_planned_computer_score(target_rack_state) -> bool:
+	if target_rack_state == null or not _is_perfect_direct_throw_plan(_computer_throw_plan):
+		return false
+
+	var target_cup_index := int(_computer_throw_plan.get("target_cup_index", -1))
+	if target_cup_index < 0 or target_rack_state.is_scored(target_cup_index):
+		return false
+
+	var target_cup: Node3D = target_rack_state.get_cup(target_cup_index)
+	if target_cup == null or not is_instance_valid(target_cup):
+		return false
+
+	if _is_ball_aligned_with_plan_target(target_cup, _ball):
+		_resolve_computer_attempt(true, target_cup)
+		return true
+
+	var contact_summary = _contact_tracker.get_summary()
+	for event in contact_summary.contacts:
+		if str(event.get("type", "")) != "cup":
+			continue
+		if int(event.get("cup_index", -1)) != target_cup_index:
+			continue
+
+		_resolve_computer_attempt(true, target_cup)
+		return true
+
+	return false
+
+
+func _serialize_throw_plan(throw_plan: Dictionary) -> Dictionary:
+	return {
+		"shot_type": str(throw_plan.get("shot_type", "direct")),
+		"target_cup_index": int(throw_plan.get("target_cup_index", -1)),
+		"aim_error": throw_plan.get("aim_error", Vector3.ZERO),
+		"angle_error_degrees": float(throw_plan.get("angle_error_degrees", 0.0)),
+	}
+
+
+func _is_perfect_direct_throw_plan(throw_plan: Dictionary) -> bool:
+	return (
+		str(throw_plan.get("shot_type", "")) == "direct"
+		and throw_plan.get("aim_error", Vector3.ZERO).length_squared() <= 0.000001
+		and absf(float(throw_plan.get("angle_error_degrees", 0.0))) <= 0.0001
+	)
+
+
+func _is_ball_aligned_with_plan_target(cup: Node3D, ball: Node3D) -> bool:
+	if cup == null or ball == null or not is_instance_valid(cup) or not is_instance_valid(ball):
+		return false
+
+	var local_ball_position := cup.global_transform.affine_inverse() * ball.global_position
+	var horizontal_distance := Vector2(local_ball_position.x, local_ball_position.z).length()
+	return horizontal_distance <= 0.045 and local_ball_position.y <= 0.12 and local_ball_position.y >= -0.75
 
 
 func _build_shot_context(contact_summary, target_rack_state, active_side: StringName, opponent_side: StringName):
@@ -619,4 +665,17 @@ func _get_attempt_bounds() -> Dictionary:
 		"out_of_bounds_z_max": table_center_z + half_length + out_of_bounds_padding_z,
 		"settled_after_seconds": settled_after_seconds,
 		"max_attempt_seconds": max_attempt_seconds,
+	}
+
+
+func _get_table_bounds() -> Dictionary:
+	var half_length := table_length_meters * 0.5
+	return {
+		"x_min": -out_of_bounds_x,
+		"x_max": out_of_bounds_x,
+		"z_min": table_center_z - half_length,
+		"z_max": table_center_z + half_length,
+		"surface_y": cup_height_y,
+		"surface_bounce": 0.04,
+		"surface_friction": 0.28,
 	}

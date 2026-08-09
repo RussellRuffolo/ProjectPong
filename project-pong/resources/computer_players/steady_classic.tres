@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="ComputerPlayerProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/match/computer_player_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+profile_id = &"steady_classic"
+display_name = "Steady Classic"
+target_heuristic = "most_central"
+direct_release_angle_degrees = 42.0
+direct_aim_error_radius = 0.025
+direct_angle_error_degrees = 1.5
+bounce_propensity = 0.05
+bounce_release_angle_degrees = 30.0
+bounce_aim_error_radius = 0.035
+bounce_angle_error_degrees = 2.0
+bounce_target_height = 0.06
+bounce_surface_id = &"table"
+notes = "Baseline computer opponent for Classic Match."

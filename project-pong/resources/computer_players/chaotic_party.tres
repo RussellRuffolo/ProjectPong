@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="ComputerPlayerProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/match/computer_player_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+profile_id = &"chaotic_party"
+display_name = "Chaotic Party"
+target_heuristic = "weighted_random"
+direct_release_angle_degrees = 33.0
+direct_aim_error_radius = 0.095
+direct_angle_error_degrees = 5.5
+bounce_propensity = 0.35
+bounce_release_angle_degrees = 22.0
+bounce_aim_error_radius = 0.11
+bounce_angle_error_degrees = 6.0
+bounce_target_height = 0.08
+bounce_surface_id = &"table"
+notes = "Unreliable party-game opponent for stress-testing target and miss paths."

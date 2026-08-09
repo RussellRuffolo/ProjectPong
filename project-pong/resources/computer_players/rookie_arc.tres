@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="ComputerPlayerProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/match/computer_player_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+profile_id = &"rookie_arc"
+display_name = "Rookie Arc"
+target_heuristic = "most_central"
+direct_release_angle_degrees = 58.0
+direct_aim_error_radius = 0.075
+direct_angle_error_degrees = 4.0
+bounce_propensity = 0.08
+bounce_release_angle_degrees = 38.0
+bounce_aim_error_radius = 0.09
+bounce_angle_error_degrees = 5.0
+bounce_target_height = 0.08
+bounce_surface_id = &"table"
+notes = "High, friendly shots with visible misses. Useful as an early opponent."

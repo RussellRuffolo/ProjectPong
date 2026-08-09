@@ -1,9 +1,11 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene format=3 uid="uid://dfewcpayiu0qu"]
 
-[ext_resource type="Script" path="res://scripts/computer_classic_match_game.gd" id="1_game"]
+[ext_resource type="Script" uid="uid://cyi0yr6jj02dx" path="res://scripts/computer_classic_match_game.gd" id="1_game"]
 [ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="2_cup_visual"]
-[ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="3_cup_collision"]
-[ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="4_surface"]
+[ext_resource type="PackedScene" uid="uid://cdb38b288aor5" path="res://models/red_solo_cup_collision.glb" id="3_cup_collision"]
+[ext_resource type="Resource" path="res://resources/computer_players/steady_classic.tres" id="4_sm61t"]
+[ext_resource type="Script" uid="uid://3cisy0phwqye" path="res://scripts/pong_physics_surface.gd" id="4_surface"]
+[ext_resource type="Script" uid="uid://dnwkg054yesh8" path="res://scripts/throwable_ball.gd" id="5_ball"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.42, 0.47, 0.5, 1)
@@ -23,63 +25,81 @@ ambient_light_energy = 0.72
 albedo_color = Color(0.18, 0.2, 0.19, 1)
 roughness = 0.85
 
+[sub_resource type="BoxMesh" id="BoxMesh_Floor"]
+size = Vector3(4, 0.05, 4.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape_Floor"]
+size = Vector3(4, 0.05, 4.8)
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_Table"]
 albedo_color = Color(0.05, 0.43, 0.34, 1)
 roughness = 0.72
+
+[sub_resource type="BoxMesh" id="BoxMesh_Table"]
+size = Vector3(0.76, 0.06, 2.7432)
+
+[sub_resource type="BoxShape3D" id="BoxShape_Table"]
+size = Vector3(0.76, 0.06, 2.7432)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_RackMarkerA"]
 albedo_color = Color(0.18, 0.62, 1, 1)
 roughness = 0.62
 
+[sub_resource type="BoxMesh" id="BoxMesh_RackMarker"]
+size = Vector3(0.54, 0.018, 0.36)
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_RackMarkerB"]
 albedo_color = Color(1, 0.58, 0.2, 1)
 roughness = 0.62
 
-[sub_resource type="LabelSettings" id="LabelSettings_Status"]
-font_size = 25
-font_color = Color(1, 0.96, 0.84, 1)
-outline_size = 5
-outline_color = Color(0.025, 0.03, 0.035, 1)
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_PingPongBall"]
+albedo_color = Color(1, 0.96, 0.82, 1)
+roughness = 0.72
 
-[sub_resource type="BoxMesh" id="BoxMesh_Floor"]
-size = Vector3(4, 0.05, 4.8)
+[sub_resource type="SphereMesh" id="SphereMesh_PingPongBall"]
+radius = 0.02
+height = 0.04
 
-[sub_resource type="BoxMesh" id="BoxMesh_Table"]
-size = Vector3(0.76, 0.06, 2.7432)
+[sub_resource type="SphereShape3D" id="SphereShape_PingPongBall"]
+radius = 0.02
 
-[sub_resource type="BoxMesh" id="BoxMesh_RackMarker"]
-size = Vector3(0.54, 0.018, 0.36)
-
-[sub_resource type="BoxShape3D" id="BoxShape_Floor"]
-size = Vector3(4, 0.05, 4.8)
-
-[sub_resource type="BoxShape3D" id="BoxShape_Table"]
-size = Vector3(0.76, 0.06, 2.7432)
-
-[node name="ComputerClassicMatchRoot" type="Node3D"]
+[node name="ComputerClassicMatchRoot" type="Node3D" unique_id=1271574084]
 script = ExtResource("1_game")
 side_one_cup_parent_path = NodePath("CupRacks/ComputerOneCupRack")
 side_two_cup_parent_path = NodePath("CupRacks/ComputerTwoCupRack")
+side_one_ball_path = NodePath("SimulationBalls/ComputerOneBall")
+side_two_ball_path = NodePath("SimulationBalls/ComputerTwoBall")
 status_label_path = NodePath("StatusLabel")
 shot_log_label_path = NodePath("ShotLogLabel")
+next_shot_button_path = NodePath("TestingUi/Root/Panel/Margin/VBox/Controls/NextShotButton")
+reset_match_button_path = NodePath("TestingUi/Root/Panel/Margin/VBox/Controls/ResetMatchButton")
+export_log_button_path = NodePath("TestingUi/Root/Panel/Margin/VBox/Controls/ExportLogButton")
+shot_log_list_path = NodePath("TestingUi/Root/Panel/Margin/VBox/ShotLogScroll/ShotLogList")
+log_export_status_label_path = NodePath("TestingUi/Root/Panel/Margin/VBox/ExportStatusLabel")
+camera_path = NodePath("Camera3D")
 cup_visual_scene = ExtResource("2_cup_visual")
 cup_collision_scene = ExtResource("3_cup_collision")
+autoplay_on_ready = false
+side_one_computer_player_profile = ExtResource("4_sm61t")
+side_two_computer_player_profile = ExtResource("4_sm61t")
+side_one_accuracy_error_radius = 0.0
+side_two_accuracy_error_radius = 0.0
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1082235874]
 environment = SubResource("Environment_1")
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1076834066]
 transform = Transform3D(0.707107, -0.353553, 0.612372, 0, 0.866025, 0.5, -0.707107, -0.353553, 0.612372, 0, 3, 0)
 light_energy = 1.15
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1065346581]
 transform = Transform3D(1, 0, 0, 0, 0.766044, 0.642788, 0, -0.642788, 0.766044, 0, 2.7, 1.35)
 current = true
 fov = 62.0
 
-[node name="PhysicsSurfaces" type="Node3D" parent="."]
+[node name="PhysicsSurfaces" type="Node3D" parent="." unique_id=1782682090]
 
-[node name="Floor" type="StaticBody3D" parent="PhysicsSurfaces"]
+[node name="Floor" type="StaticBody3D" parent="PhysicsSurfaces" unique_id=941381867]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1.56)
 script = ExtResource("4_surface")
 surface_id = &"floor"
@@ -88,55 +108,146 @@ friction = 0.82
 absorbs_ball_bounce = true
 rough = true
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Floor"]
-mesh = SubResource("BoxMesh_Floor")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Floor" unique_id=1003633987]
 material_override = SubResource("StandardMaterial3D_Floor")
+mesh = SubResource("BoxMesh_Floor")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Floor"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Floor" unique_id=2137933488]
 shape = SubResource("BoxShape_Floor")
 
-[node name="Table" type="StaticBody3D" parent="PhysicsSurfaces"]
+[node name="Table" type="StaticBody3D" parent="PhysicsSurfaces" unique_id=420262931]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -1.56)
 script = ExtResource("4_surface")
 surface_id = &"table"
 bounce = 0.04
 friction = 0.28
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Table"]
-mesh = SubResource("BoxMesh_Table")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PhysicsSurfaces/Table" unique_id=156208399]
 material_override = SubResource("StandardMaterial3D_Table")
+mesh = SubResource("BoxMesh_Table")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Table"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PhysicsSurfaces/Table" unique_id=54234376]
 shape = SubResource("BoxShape_Table")
 
-[node name="RackMarkers" type="Node3D" parent="."]
+[node name="RackMarkers" type="Node3D" parent="." unique_id=1185023676]
 
-[node name="ComputerOneMarker" type="MeshInstance3D" parent="RackMarkers"]
+[node name="ComputerOneMarker" type="MeshInstance3D" parent="RackMarkers" unique_id=1017785083]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.775, -0.35)
-mesh = SubResource("BoxMesh_RackMarker")
 material_override = SubResource("StandardMaterial3D_RackMarkerA")
-
-[node name="ComputerTwoMarker" type="MeshInstance3D" parent="RackMarkers"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.775, -2.77)
 mesh = SubResource("BoxMesh_RackMarker")
+
+[node name="ComputerTwoMarker" type="MeshInstance3D" parent="RackMarkers" unique_id=981101257]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.775, -2.77)
 material_override = SubResource("StandardMaterial3D_RackMarkerB")
+mesh = SubResource("BoxMesh_RackMarker")
 
-[node name="CupRacks" type="Node3D" parent="."]
+[node name="CupRacks" type="Node3D" parent="." unique_id=2052942889]
 
-[node name="ComputerOneCupRack" type="Node3D" parent="CupRacks"]
+[node name="ComputerOneCupRack" type="Node3D" parent="CupRacks" unique_id=1421651599]
 
-[node name="ComputerTwoCupRack" type="Node3D" parent="CupRacks"]
+[node name="ComputerTwoCupRack" type="Node3D" parent="CupRacks" unique_id=1255832463]
 
-[node name="StatusLabel" type="Label3D" parent="."]
+[node name="SimulationBalls" type="Node3D" parent="." unique_id=880531750]
+
+[node name="ComputerOneBall" type="RigidBody3D" parent="SimulationBalls" unique_id=507312168 groups=["game_ball"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.18, -0.0484)
+mass = 0.0027
+gravity_scale = 0.0
+script = ExtResource("5_ball")
+can_be_grabbed = false
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="SimulationBalls/ComputerOneBall" unique_id=130684392]
+material_override = SubResource("StandardMaterial3D_PingPongBall")
+mesh = SubResource("SphereMesh_PingPongBall")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SimulationBalls/ComputerOneBall" unique_id=1626852653]
+shape = SubResource("SphereShape_PingPongBall")
+
+[node name="ComputerTwoBall" type="RigidBody3D" parent="SimulationBalls" unique_id=980722711 groups=["game_ball"]]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 1.18, -3.0716)
+mass = 0.0027
+gravity_scale = 0.0
+script = ExtResource("5_ball")
+can_be_grabbed = false
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="SimulationBalls/ComputerTwoBall" unique_id=75691713]
+material_override = SubResource("StandardMaterial3D_PingPongBall")
+mesh = SubResource("SphereMesh_PingPongBall")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SimulationBalls/ComputerTwoBall" unique_id=1751375116]
+shape = SubResource("SphereShape_PingPongBall")
+
+[node name="StatusLabel" type="Label3D" parent="." unique_id=762911072]
 transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, -0.78, 1.52, -1.15)
 pixel_size = 0.0023
 billboard = 1
 text = "Computer Classic Match"
-label_settings = SubResource("LabelSettings_Status")
 
-[node name="ShotLogLabel" type="Label3D" parent="."]
+[node name="ShotLogLabel" type="Label3D" parent="." unique_id=258197839]
 transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, 0.72, 1.42, -1.2)
 pixel_size = 0.0018
 billboard = 1
 text = "Shot log"
-label_settings = SubResource("LabelSettings_Status")
+
+[node name="TestingUi" type="CanvasLayer" parent="." unique_id=1226182975]
+
+[node name="Root" type="Control" parent="TestingUi" unique_id=47672306]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="TestingUi/Root" unique_id=1044248915]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.01
+anchor_top = 0.02
+anchor_right = 0.37
+anchor_bottom = 0.98
+
+[node name="Margin" type="MarginContainer" parent="TestingUi/Root/Panel" unique_id=1949576518]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="TestingUi/Root/Panel/Margin" unique_id=269360547]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="TestingUi/Root/Panel/Margin/VBox" unique_id=815013164]
+layout_mode = 2
+text = "Computer Classic Match"
+
+[node name="Controls" type="HBoxContainer" parent="TestingUi/Root/Panel/Margin/VBox" unique_id=1185844952]
+layout_mode = 2
+
+[node name="NextShotButton" type="Button" parent="TestingUi/Root/Panel/Margin/VBox/Controls" unique_id=1860934036]
+layout_mode = 2
+text = "Next Shot"
+
+[node name="ResetMatchButton" type="Button" parent="TestingUi/Root/Panel/Margin/VBox/Controls" unique_id=1346488699]
+layout_mode = 2
+text = "Reset"
+
+[node name="ExportLogButton" type="Button" parent="TestingUi/Root/Panel/Margin/VBox/Controls" unique_id=1929779727]
+layout_mode = 2
+disabled = true
+text = "Export Log"
+
+[node name="ShotLogScroll" type="ScrollContainer" parent="TestingUi/Root/Panel/Margin/VBox" unique_id=798224308]
+custom_minimum_size = Vector2(0, 430)
+layout_mode = 2
+size_flags_vertical = 3
+follow_focus = true
+horizontal_scroll_mode = 0
+
+[node name="ShotLogList" type="VBoxContainer" parent="TestingUi/Root/Panel/Margin/VBox/ShotLogScroll" unique_id=809481441]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ExportStatusLabel" type="Label" parent="TestingUi/Root/Panel/Margin/VBox" unique_id=280562836]
+layout_mode = 2
+autowrap_mode = 3
