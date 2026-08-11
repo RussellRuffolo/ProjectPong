@@ -33,6 +33,7 @@ static func build_parameters(config: Dictionary) -> Dictionary:
 		"min_score_downward_speed": maxf(float(config.get("min_score_downward_speed", 0.15)), 0.0),
 		"rim_top_radial_normal_scale": maxf(float(config.get("rim_top_radial_normal_scale", 0.38)), 0.0),
 		"rim_top_upward_normal_scale": maxf(float(config.get("rim_top_upward_normal_scale", 0.92)), 0.0),
+		"non_score_clearance": maxf(float(config.get("non_score_clearance", 0.012)), 0.0),
 	}
 
 
@@ -65,11 +66,6 @@ static func evaluate_ball_motion(
 		_apply_event_result(result, top_event)
 		return result
 
-	var current_capture := evaluate_current_score_capture(current_local_position, safe_radius, parameters)
-	if not current_capture.is_empty():
-		_apply_event_result(result, current_capture)
-		return result
-
 	var side_event := evaluate_side_contact(
 		previous_local_position,
 		current_local_position,
@@ -79,6 +75,11 @@ static func evaluate_ball_motion(
 	)
 	if not side_event.is_empty():
 		_apply_event_result(result, side_event)
+		return result
+
+	var current_capture := evaluate_current_score_capture(current_local_position, safe_radius, parameters)
+	if not current_capture.is_empty():
+		_apply_event_result(result, current_capture)
 
 	return result
 
@@ -231,24 +232,50 @@ static func evaluate_side_contact(
 	var current_signed_distance := get_side_signed_distance(current_local_position, parameters)
 	var previous_signed_distance := get_side_signed_distance(previous_local_position, parameters)
 	var near_wall := absf(current_signed_distance) <= ball_radius
+	var crossed_side_surface := (
+		previous_signed_distance > EPSILON and current_signed_distance <= EPSILON
+	) or (
+		previous_signed_distance < -EPSILON and current_signed_distance >= -EPSILON
+	)
 	var crossed_wall := (
 		previous_signed_distance > ball_radius and current_signed_distance < -ball_radius
 	) or (
 		previous_signed_distance < -ball_radius and current_signed_distance > ball_radius
 	)
-	if not near_wall and not crossed_wall:
+	if not near_wall and not crossed_wall and not crossed_side_surface:
 		return {}
 
-	var reference_signed_distance := previous_signed_distance if crossed_wall else current_signed_distance
-	var side_normal_local := get_side_outward_normal(current_local_position, parameters)
+	var reference_signed_distance := previous_signed_distance if crossed_wall or crossed_side_surface else current_signed_distance
+	var contact_center_local_position := get_side_contact_sample_position(
+		previous_local_position,
+		current_local_position,
+		previous_signed_distance,
+		current_signed_distance,
+		ball_radius,
+		parameters
+	)
+	var side_normal_local := get_side_outward_normal(contact_center_local_position, parameters)
 	var collision_normal_local := side_normal_local if reference_signed_distance >= 0.0 else -side_normal_local
-	if local_velocity.dot(collision_normal_local) >= -0.01 and not crossed_wall:
-		return {}
+	if local_velocity.dot(collision_normal_local) >= -0.01:
+		if crossed_wall and local_velocity.dot(-collision_normal_local) < -0.01:
+			collision_normal_local = -collision_normal_local
+		else:
+			return {}
+
+	var contact_surface_local_position := get_side_surface_position(contact_center_local_position, parameters)
+	var clear_local_position := get_side_clear_position(
+		contact_center_local_position,
+		collision_normal_local,
+		ball_radius,
+		parameters
+	)
 
 	return {
 		"event": EVENT_SIDE_CONTACT,
 		"event_name": get_event_name(EVENT_SIDE_CONTACT),
-		"event_local_position": current_local_position,
+		"event_local_position": contact_surface_local_position,
+		"contact_center_local_position": contact_center_local_position,
+		"clear_local_position": clear_local_position,
 		"event_normal_local": collision_normal_local,
 		"reference_signed_distance": reference_signed_distance,
 		"current_signed_distance": current_signed_distance,
@@ -256,6 +283,61 @@ static func evaluate_side_contact(
 		"classification": CLASS_SIDE_WALL,
 		"classification_name": get_classification_name(CLASS_SIDE_WALL),
 	}
+
+
+static func get_side_contact_sample_position(
+	previous_local_position: Vector3,
+	current_local_position: Vector3,
+	previous_signed_distance: float,
+	current_signed_distance: float,
+	ball_radius: float,
+	parameters: Dictionary
+) -> Vector3:
+	var target_signed_distance := current_signed_distance
+	if previous_signed_distance > ball_radius and current_signed_distance <= ball_radius:
+		target_signed_distance = ball_radius
+	elif previous_signed_distance < -ball_radius and current_signed_distance >= -ball_radius:
+		target_signed_distance = -ball_radius
+	elif previous_signed_distance > EPSILON and current_signed_distance <= EPSILON:
+		target_signed_distance = 0.0
+	elif previous_signed_distance < -EPSILON and current_signed_distance >= -EPSILON:
+		target_signed_distance = 0.0
+	else:
+		return current_local_position
+
+	var signed_delta := current_signed_distance - previous_signed_distance
+	if absf(signed_delta) <= EPSILON:
+		return current_local_position
+
+	var ratio := clampf((target_signed_distance - previous_signed_distance) / signed_delta, 0.0, 1.0)
+	var contact_local := previous_local_position.lerp(current_local_position, ratio)
+	contact_local.y = clampf(contact_local.y, get_bottom_y(parameters), get_rim_y(parameters))
+	return contact_local
+
+
+static func get_side_surface_position(local_position: Vector3, parameters: Dictionary) -> Vector3:
+	var radial := Vector2(local_position.x, local_position.z)
+	var radial_length := radial.length()
+	if radial_length <= EPSILON:
+		return local_position
+
+	var y := clampf(local_position.y, get_bottom_y(parameters), get_rim_y(parameters))
+	var radial_direction := radial / radial_length
+	var wall_radius := get_radius_at_y(y, parameters)
+	return Vector3(radial_direction.x * wall_radius, y, radial_direction.y * wall_radius)
+
+
+static func get_side_clear_position(
+	local_position: Vector3,
+	normal_local: Vector3,
+	ball_radius: float,
+	parameters: Dictionary
+) -> Vector3:
+	if normal_local.length_squared() <= EPSILON:
+		return local_position
+
+	var surface_local := get_side_surface_position(local_position, parameters)
+	return surface_local + normal_local.normalized() * (maxf(ball_radius, 0.0) + get_non_score_clearance(parameters))
 
 
 static func calculate_local_nearest_surface_snapshot(local_position: Vector3, parameters: Dictionary) -> Dictionary:
@@ -489,6 +571,10 @@ static func get_rim_top_radial_normal_scale(parameters: Dictionary) -> float:
 
 static func get_rim_top_upward_normal_scale(parameters: Dictionary) -> float:
 	return maxf(float(parameters.get("rim_top_upward_normal_scale", 0.92)), 0.0)
+
+
+static func get_non_score_clearance(parameters: Dictionary) -> float:
+	return maxf(float(parameters.get("non_score_clearance", 0.012)), 0.0)
 
 
 static func get_height(parameters: Dictionary) -> float:

@@ -1,10 +1,10 @@
-[gd_scene format=3]
+[gd_scene load_steps=20 format=3]
 
-[ext_resource type="Script" path="res://scripts/editor/shot_tester.gd" id="1_tester"]
+[ext_resource type="Script" path="res://scripts/editor/shot_tester/shot_tester_app.gd" id="1_app"]
 [ext_resource type="PackedScene" path="res://models/red_solo_cup.glb" id="2_cup_visual"]
-[ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="3_cup_collision"]
-[ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="4_surface"]
-[ext_resource type="Script" path="res://scripts/throwable_ball.gd" id="5_ball"]
+[ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="3_surface"]
+[ext_resource type="Script" path="res://scripts/throwable_ball.gd" id="4_ball"]
+[ext_resource type="Script" path="res://scripts/editor/shot_tester/shot_tester_rack.gd" id="5_rack"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.42, 0.47, 0.5, 1)
@@ -69,16 +69,14 @@ roughness = 0.36
 radius = 0.045
 height = 0.09
 
-[node name="ShotTesterRoot" type="Node3D"]
-script = ExtResource("1_tester")
-target_cup_parent_path = NodePath("CupRacks/TargetCupRack")
+[node name="ShotTesterApp" type="Node3D"]
+script = ExtResource("1_app")
+cup_rack_root_path = NodePath("CupRackRoot")
 ball_path = NodePath("SimulationBall")
 aim_indicator_path = NodePath("AimIndicator")
 camera_path = NodePath("Camera3D")
 ui_root_path = NodePath("TestingUi/Root")
 cup_visual_scene = ExtResource("2_cup_visual")
-cup_collision_scene = ExtResource("3_cup_collision")
-shared_cup_collision_model_enabled = true
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_1")
@@ -96,7 +94,7 @@ fov = 62.0
 
 [node name="Floor" type="StaticBody3D" parent="PhysicsSurfaces"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, -1.56)
-script = ExtResource("4_surface")
+script = ExtResource("3_surface")
 surface_id = &"floor"
 bounce = 0.62
 friction = 0.82
@@ -112,7 +110,7 @@ shape = SubResource("BoxShape_Floor")
 
 [node name="Table" type="StaticBody3D" parent="PhysicsSurfaces"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -1.56)
-script = ExtResource("4_surface")
+script = ExtResource("3_surface")
 surface_id = &"table"
 bounce = 0.04
 friction = 0.28
@@ -131,15 +129,14 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.775, -2.77)
 material_override = SubResource("StandardMaterial3D_RackMarker")
 mesh = SubResource("BoxMesh_RackMarker")
 
-[node name="CupRacks" type="Node3D" parent="."]
-
-[node name="TargetCupRack" type="Node3D" parent="CupRacks"]
+[node name="CupRackRoot" type="Node3D" parent="."]
+script = ExtResource("5_rack")
 
 [node name="SimulationBall" type="RigidBody3D" parent="." groups=["game_ball"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.18, -0.0484)
 mass = 0.0027
 gravity_scale = 0.0
-script = ExtResource("5_ball")
+script = ExtResource("4_ball")
 can_be_grabbed = false
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="SimulationBall"]

@@ -2,6 +2,7 @@ extends Node3D
 class_name CollisionTester
 
 const FRUSTUM_SHADER := preload("res://shaders/conic_frustum_visual.gdshader")
+const ConicFrustumCollisionScript := preload("res://scripts/match/conic_frustum_collision.gd")
 const EPSILON := 0.0001
 const MIN_SEGMENTS := 8
 const MAX_SEGMENTS := 128
@@ -179,40 +180,12 @@ func calculate_ball_frustum_intersection(ball_world_position: Vector3, radius: f
 
 
 func calculate_local_sphere_frustum_intersection(local_position: Vector3, radius: float) -> Dictionary:
-	var safe_radius := maxf(radius, 0.0)
-	var radial_distance := Vector2(local_position.x, local_position.z).length()
-	var cross_section_point := Vector2(radial_distance, local_position.y)
-	var inside := _is_cross_section_point_inside_frustum(cross_section_point)
-	var normal_snapshot := calculate_local_nearest_surface_snapshot(local_position)
-	var closest_cross_section_point: Vector2 = normal_snapshot.get("nearest_cross_section_point", cross_section_point)
-	var closest_feature := str(normal_snapshot.get("closest_feature", "inside"))
-	var distance := float(normal_snapshot.get("distance_to_surface", 0.0))
-	var distance_squared := distance * distance
-	var intersects := inside or distance_squared <= safe_radius * safe_radius + EPSILON
-	var classification_snapshot := classify_local_sphere_frustum_overlap(local_position, safe_radius, intersects, closest_feature)
-
-	return {
-		"intersects": intersects,
-		"inside": inside,
-		"classification": classification_snapshot.get("classification", CLASS_OUTSIDE),
-		"top_plane_overlap": classification_snapshot.get("top_plane_overlap", false),
-		"rim_band_overlap": classification_snapshot.get("rim_band_overlap", false),
-		"top_inner_overlap": classification_snapshot.get("top_inner_overlap", false),
-		"rim_band_width": classification_snapshot.get("rim_band_width", 0.0),
-		"rim_band_inner_radius": classification_snapshot.get("rim_band_inner_radius", 0.0),
-		"rim_band_outer_radius": classification_snapshot.get("rim_band_outer_radius", 0.0),
-		"ball_radius": safe_radius,
-		"ball_local_position": local_position,
-		"radial_distance": radial_distance,
-		"closest_feature": closest_feature,
-		"closest_cross_section_point": closest_cross_section_point,
-		"nearest_local_point": normal_snapshot.get("nearest_local_point", Vector3.ZERO),
-		"normal_local": normal_snapshot.get("normal_local", Vector3.UP),
-		"normal_world": normal_snapshot.get("normal_world", Vector3.UP),
-		"signed_center_distance": normal_snapshot.get("signed_center_distance", 0.0),
-		"distance_to_frustum": distance,
-		"clearance": distance - safe_radius,
-	}
+	return ConicFrustumCollisionScript.calculate_local_sphere_frustum_intersection(
+		local_position,
+		radius,
+		_get_collision_parameters(),
+		global_transform
+	)
 
 
 func classify_local_sphere_frustum_overlap(
@@ -221,110 +194,33 @@ func classify_local_sphere_frustum_overlap(
 	intersects: bool,
 	closest_feature: String
 ) -> Dictionary:
-	var safe_radius := maxf(radius, 0.0)
-	var radial_distance := Vector2(local_position.x, local_position.z).length()
-	var rim_band_width := _get_rim_band_width(safe_radius)
-	var rim_band_inner_radius := maxf(0.0, rim_radius - rim_band_width)
-	var rim_band_outer_radius := rim_radius + rim_band_width
-	var projected_min_radius := maxf(0.0, radial_distance - safe_radius)
-	var projected_max_radius := radial_distance + safe_radius
-	var top_plane_overlap := absf(local_position.y - rim_y) <= safe_radius + EPSILON
-	var rim_band_overlap := (
-		top_plane_overlap
-		and projected_max_radius >= rim_band_inner_radius - EPSILON
-		and projected_min_radius <= rim_band_outer_radius + EPSILON
+	return ConicFrustumCollisionScript.classify_local_sphere_frustum_overlap(
+		local_position,
+		radius,
+		intersects,
+		closest_feature,
+		_get_collision_parameters()
 	)
-	var top_inner_overlap := (
-		top_plane_overlap
-		and not rim_band_overlap
-		and projected_max_radius < rim_band_inner_radius - EPSILON
-	)
-	var classification := CLASS_OUTSIDE
-
-	if rim_band_overlap:
-		classification = CLASS_TOP_RIM_BAND
-	elif top_inner_overlap:
-		classification = CLASS_TOP_INNER
-	elif intersects:
-		if _is_cross_section_point_inside_frustum(Vector2(radial_distance, local_position.y)):
-			classification = CLASS_INSIDE_VOLUME
-		elif closest_feature == "bottom_cap":
-			classification = CLASS_BOTTOM_CAP
-		else:
-			classification = CLASS_SIDE_WALL
-
-	return {
-		"classification": classification,
-		"top_plane_overlap": top_plane_overlap,
-		"rim_band_overlap": rim_band_overlap,
-		"top_inner_overlap": top_inner_overlap,
-		"rim_band_width": rim_band_width,
-		"rim_band_inner_radius": rim_band_inner_radius,
-		"rim_band_outer_radius": rim_band_outer_radius,
-		"projected_min_radius": projected_min_radius,
-		"projected_max_radius": projected_max_radius,
-	}
 
 
 func calculate_local_nearest_surface_snapshot(local_position: Vector3) -> Dictionary:
-	var radial := Vector2(local_position.x, local_position.z)
-	var radial_distance := radial.length()
-	var radial_direction := Vector2(1.0, 0.0) if radial_distance <= EPSILON else radial / radial_distance
-	var cross_section_point := Vector2(radial_distance, local_position.y)
-	var closest := _get_closest_cross_section_point(cross_section_point)
-	var nearest_cross_section_point := closest["point"] as Vector2
-	var nearest_local_point := Vector3(
-		radial_direction.x * nearest_cross_section_point.x,
-		nearest_cross_section_point.y,
-		radial_direction.y * nearest_cross_section_point.x
+	return ConicFrustumCollisionScript.calculate_local_nearest_surface_snapshot(
+		local_position,
+		_get_collision_parameters(),
+		global_transform
 	)
-	var to_ball := local_position - nearest_local_point
-	var distance := to_ball.length()
-	var normal_local := to_ball / distance if distance > EPSILON else _get_fallback_normal_for_feature(
-		str(closest["feature"]),
-		nearest_local_point,
-		radial_direction
-	)
-	var inside := _is_cross_section_point_inside_frustum(cross_section_point)
-	var signed_distance := -distance if inside else distance
-
-	return {
-		"nearest_local_point": nearest_local_point,
-		"nearest_world_point": global_transform * nearest_local_point,
-		"nearest_cross_section_point": nearest_cross_section_point,
-		"normal_local": normal_local,
-		"normal_world": _to_world_normal(normal_local),
-		"distance_to_surface": distance,
-		"signed_center_distance": signed_distance,
-		"closest_feature": str(closest["feature"]),
-		"inside": inside,
-	}
 
 
 func get_radius_at_y(local_y: float) -> float:
-	var height := _get_height()
-	var y_ratio := clampf((local_y - bottom_y) / height, 0.0, 1.0)
-	return lerpf(bottom_radius, rim_radius, y_ratio)
+	return ConicFrustumCollisionScript.get_radius_at_y(local_y, _get_collision_parameters())
 
 
 func is_local_point_inside_frustum(local_position: Vector3) -> bool:
-	var min_y := minf(bottom_y, rim_y)
-	var max_y := maxf(bottom_y, rim_y)
-	if local_position.y < min_y or local_position.y > max_y:
-		return false
-
-	var horizontal_radius := Vector2(local_position.x, local_position.z).length()
-	return horizontal_radius <= get_radius_at_y(local_position.y)
+	return ConicFrustumCollisionScript.is_local_point_inside_frustum(local_position, _get_collision_parameters())
 
 
 func get_side_normal_at_local_position(local_position: Vector3) -> Vector3:
-	var radial := Vector2(local_position.x, local_position.z)
-	if radial.length_squared() <= EPSILON:
-		return Vector3.UP
-
-	var slope := (rim_radius - bottom_radius) / _get_height()
-	var radial_direction := radial.normalized()
-	return Vector3(radial_direction.x, -slope, radial_direction.y).normalized()
+	return ConicFrustumCollisionScript.get_side_normal_at_local_position(local_position, _get_collision_parameters())
 
 
 func get_frustum_snapshot() -> Dictionary:
@@ -813,8 +709,18 @@ func _get_height() -> float:
 	return maxf(rim_y - bottom_y, EPSILON)
 
 
+func _get_collision_parameters() -> Dictionary:
+	return ConicFrustumCollisionScript.build_parameters({
+		"bottom_y": bottom_y,
+		"rim_y": rim_y,
+		"bottom_radius": bottom_radius,
+		"rim_radius": rim_radius,
+		"rim_band_ball_radius_scale": rim_band_ball_radius_scale,
+	})
+
+
 func _get_rim_band_width(radius: float) -> float:
-	return maxf(radius * rim_band_ball_radius_scale, EPSILON)
+	return ConicFrustumCollisionScript.get_rim_band_width(radius, _get_collision_parameters())
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
@@ -973,62 +879,20 @@ func _apply_ball_status_color(classification: String) -> void:
 
 
 func _is_cross_section_point_inside_frustum(point: Vector2) -> bool:
-	var min_y := minf(bottom_y, rim_y)
-	var max_y := maxf(bottom_y, rim_y)
-	if point.y < min_y or point.y > max_y:
-		return false
-	return point.x <= get_radius_at_y(point.y)
+	return ConicFrustumCollisionScript.is_cross_section_point_inside_frustum(point, _get_collision_parameters())
 
 
 func _get_closest_cross_section_point(point: Vector2) -> Dictionary:
-	var candidates: Array[Dictionary] = [
-		{
-			"point": _get_closest_point_on_segment_2d(
-				point,
-				Vector2(0.0, bottom_y),
-				Vector2(bottom_radius, bottom_y)
-			),
-			"feature": "bottom_cap",
-		},
-		{
-			"point": _get_closest_point_on_segment_2d(
-				point,
-				Vector2(0.0, rim_y),
-				Vector2(rim_radius, rim_y)
-			),
-			"feature": "top_cap",
-		},
-		{
-			"point": _get_closest_point_on_segment_2d(
-				point,
-				Vector2(bottom_radius, bottom_y),
-				Vector2(rim_radius, rim_y)
-			),
-			"feature": "side_wall",
-		},
-	]
-
-	var best := candidates[0]
-	var best_distance_squared: float = point.distance_squared_to(best["point"] as Vector2)
-	for candidate in candidates:
-		var candidate_point := candidate["point"] as Vector2
-		var distance_squared := point.distance_squared_to(candidate_point)
-		if distance_squared < best_distance_squared:
-			best = candidate
-			best_distance_squared = distance_squared
-	return best
+	return ConicFrustumCollisionScript.get_closest_cross_section_point(point, _get_collision_parameters())
 
 
 func _get_fallback_normal_for_feature(feature: String, nearest_local_point: Vector3, radial_direction: Vector2) -> Vector3:
-	match feature:
-		"side_wall":
-			return get_side_normal_at_local_position(nearest_local_point)
-		"bottom_cap":
-			return Vector3.DOWN
-		"top_cap":
-			return Vector3.UP
-
-	return Vector3(radial_direction.x, 0.0, radial_direction.y).normalized()
+	return ConicFrustumCollisionScript.get_fallback_normal_for_feature(
+		feature,
+		nearest_local_point,
+		radial_direction,
+		_get_collision_parameters()
+	)
 
 
 func _update_normal_vector_visual() -> void:
@@ -1064,13 +928,7 @@ func _update_normal_vector_visual() -> void:
 
 
 func _get_closest_point_on_segment_2d(point: Vector2, segment_start: Vector2, segment_end: Vector2) -> Vector2:
-	var segment := segment_end - segment_start
-	var segment_length_squared := segment.length_squared()
-	if segment_length_squared <= EPSILON:
-		return segment_start
-
-	var amount := clampf((point - segment_start).dot(segment) / segment_length_squared, 0.0, 1.0)
-	return segment_start + segment * amount
+	return ConicFrustumCollisionScript.get_closest_point_on_segment_2d(point, segment_start, segment_end)
 
 
 func _get_point_to_segment_distance_2d(point: Vector2, segment_start: Vector2, segment_end: Vector2) -> float:

@@ -45,14 +45,9 @@ const EPSILON := 0.0001
 @export var interaction_height_margin := 0.05
 @export var min_score_downward_speed := 0.15
 @export_range(0.0, 2.0, 0.01) var rim_band_ball_radius_scale := 0.6
-@export_range(0.0, 1.0, 0.01) var side_deflection_bounce := 0.35
-@export_range(0.0, 1.0, 0.01) var side_deflection_tangent_scale := 0.82
-@export_range(0.0, 1.0, 0.01) var rim_deflection_bounce := 0.72
-@export_range(0.0, 1.0, 0.01) var rim_deflection_tangent_scale := 0.68
 @export_range(0.0, 1.0, 0.01) var rim_top_radial_normal_scale := 0.38
 @export_range(0.0, 1.0, 0.01) var rim_top_upward_normal_scale := 0.92
-@export var side_penetration_correction_scale := 0.85
-@export var rim_penetration_correction_scale := 0.35
+@export var non_score_clearance := 0.012
 @export var capture_animation_seconds := 0.18
 @export_range(0.0, 1.0, 0.01) var cup_bottom_bounce_absorption := 0.9
 @export_range(0.0, 1.0, 0.01) var cup_bottom_friction := 0.96
@@ -138,8 +133,8 @@ func _physics_process(delta: float) -> void:
 			_handle_shared_collision_model(ball, previous_local, current_local, ball_radius)
 		else:
 			var handled_top := _try_handle_top_crossing(ball, previous_local, current_local, ball_radius)
-			if not handled_top and not _try_handle_score_capture(ball, current_local, ball_radius):
-				_try_handle_side_deflection(ball, previous_local, current_local, ball_radius)
+			if not handled_top and not _try_handle_side_deflection(ball, previous_local, current_local, ball_radius):
+				_try_handle_score_capture(ball, current_local, ball_radius)
 
 		_last_local_positions[ball_id] = _to_local_position(ball.global_position)
 
@@ -306,12 +301,17 @@ func _on_score_area_body_entered(body: Node3D) -> void:
 		_on_interaction_body_entered(body)
 		var ball := body as RigidBody3D
 		if ball != null:
+			var body_id := body.get_instance_id()
 			var current_local := _to_local_position(ball.global_position)
+			var previous_local: Vector3 = _last_local_positions.get(body_id, current_local)
 			var ball_radius := ShotPhysicsScript.get_ball_radius(ball, DEFAULT_BALL_RADIUS)
 			if shared_collision_model_enabled:
-				_handle_shared_collision_model(ball, current_local, current_local, ball_radius)
+				_handle_shared_collision_model(ball, previous_local, current_local, ball_radius)
 			else:
-				_try_handle_score_capture(ball, current_local, ball_radius)
+				var handled_top := _try_handle_top_crossing(ball, previous_local, current_local, ball_radius)
+				if not handled_top and not _try_handle_side_deflection(ball, previous_local, current_local, ball_radius):
+					_try_handle_score_capture(ball, current_local, ball_radius)
+			_last_local_positions[body_id] = _to_local_position(ball.global_position)
 		return
 
 	_apply_score_capture(body)
@@ -327,7 +327,9 @@ func _on_interaction_body_entered(body: Node3D) -> void:
 
 	if not _interaction_bodies.has(body):
 		_interaction_bodies.append(body)
-	_last_local_positions[body.get_instance_id()] = _to_local_position(body.global_position)
+		_last_local_positions[body.get_instance_id()] = _to_local_position(body.global_position)
+	elif not _last_local_positions.has(body.get_instance_id()):
+		_last_local_positions[body.get_instance_id()] = _to_local_position(body.global_position)
 	set_physics_process(true)
 
 
@@ -418,26 +420,74 @@ func _try_handle_side_deflection(
 	var current_signed_distance := _get_side_signed_distance(current_local)
 	var previous_signed_distance := _get_side_signed_distance(previous_local)
 	var near_wall := absf(current_signed_distance) <= ball_radius
+	var crossed_side_surface := (
+		previous_signed_distance > EPSILON and current_signed_distance <= EPSILON
+	) or (
+		previous_signed_distance < -EPSILON and current_signed_distance >= -EPSILON
+	)
 	var crossed_wall := (
 		previous_signed_distance > ball_radius and current_signed_distance < -ball_radius
 	) or (
 		previous_signed_distance < -ball_radius and current_signed_distance > ball_radius
 	)
-	if not near_wall and not crossed_wall:
+	if not near_wall and not crossed_wall and not crossed_side_surface:
 		return false
 
-	var reference_signed_distance := previous_signed_distance if crossed_wall else current_signed_distance
-	var side_normal_local := _get_side_outward_normal(current_local)
+	var reference_signed_distance := previous_signed_distance if crossed_wall or crossed_side_surface else current_signed_distance
+	var contact_local := _get_side_contact_sample_position(
+		previous_local,
+		current_local,
+		previous_signed_distance,
+		current_signed_distance,
+		ball_radius
+	)
+	var side_normal_local := _get_side_outward_normal(contact_local)
 	var collision_normal_local := side_normal_local if reference_signed_distance >= 0.0 else -side_normal_local
 	var velocity_local := _to_local_vector(ball.linear_velocity)
-	if velocity_local.dot(collision_normal_local) >= -0.01 and not crossed_wall:
-		return false
+	if velocity_local.dot(collision_normal_local) >= -0.01:
+		if crossed_wall and velocity_local.dot(-collision_normal_local) < -0.01:
+			collision_normal_local = -collision_normal_local
+		else:
+			return false
 
-	var normal_world := _to_world_normal(collision_normal_local)
-	_apply_velocity_deflection(ball, normal_world, side_deflection_bounce, side_deflection_tangent_scale)
-	_apply_side_position_correction(ball, current_local, reference_signed_distance, ball_radius)
+	var clear_local := CupCollisionModelScript.get_side_clear_position(
+		contact_local,
+		collision_normal_local,
+		ball_radius,
+		_collision_parameters
+	)
+	_resolve_kinematic_cup_reflection(ball, collision_normal_local, clear_local)
 	_record_synthetic_cup_contact(ball, SURFACE_CUP_WALL)
 	return true
+
+
+func _get_side_contact_sample_position(
+	previous_local: Vector3,
+	current_local: Vector3,
+	previous_signed_distance: float,
+	current_signed_distance: float,
+	ball_radius: float
+) -> Vector3:
+	var target_signed_distance := current_signed_distance
+	if previous_signed_distance > ball_radius and current_signed_distance <= ball_radius:
+		target_signed_distance = ball_radius
+	elif previous_signed_distance < -ball_radius and current_signed_distance >= -ball_radius:
+		target_signed_distance = -ball_radius
+	elif previous_signed_distance > EPSILON and current_signed_distance <= EPSILON:
+		target_signed_distance = 0.0
+	elif previous_signed_distance < -EPSILON and current_signed_distance >= -EPSILON:
+		target_signed_distance = 0.0
+	else:
+		return current_local
+
+	var signed_delta := current_signed_distance - previous_signed_distance
+	if absf(signed_delta) <= EPSILON:
+		return current_local
+
+	var ratio := clampf((target_signed_distance - previous_signed_distance) / signed_delta, 0.0, 1.0)
+	var contact_local := previous_local.lerp(current_local, ratio)
+	contact_local.y = clampf(contact_local.y, cup_bottom_y, cup_rim_y)
+	return contact_local
 
 
 func _handle_shared_collision_model(
@@ -470,9 +520,16 @@ func _handle_shared_collision_model(
 		var side_normal_local: Vector3 = collision.get("event_normal_local", Vector3.ZERO)
 		if side_normal_local.length_squared() <= EPSILON:
 			return false
-		var reference_signed_distance := float(collision.get("reference_signed_distance", 0.0))
-		_apply_velocity_deflection(ball, _to_world_normal(side_normal_local), side_deflection_bounce, side_deflection_tangent_scale)
-		_apply_side_position_correction(ball, current_local, reference_signed_distance, ball_radius)
+		var side_clear_local: Vector3 = collision.get(
+			"clear_local_position",
+			CupCollisionModelScript.get_side_clear_position(
+				collision.get("contact_center_local_position", current_local),
+				side_normal_local,
+				ball_radius,
+				_collision_parameters
+			)
+		)
+		_resolve_kinematic_cup_reflection(ball, side_normal_local, side_clear_local)
 		_record_synthetic_cup_contact(ball, SURFACE_CUP_WALL)
 		return true
 
@@ -537,16 +594,23 @@ func _apply_rim_deflection(
 	var sample_local := crossing_local
 	sample_local.y = cup_rim_y + maxf(rim_tube_radius, ball_radius * 0.25)
 	var rim_normal_local := normal_local if normal_local.length_squared() > EPSILON else _get_flat_top_rim_normal(sample_local)
-	var rim_normal_world := _to_world_normal(rim_normal_local)
-	_apply_velocity_deflection(ball, rim_normal_world, rim_deflection_bounce, rim_deflection_tangent_scale)
-	ball.global_position += rim_normal_world * ball_radius * rim_penetration_correction_scale
+	var clear_local := _get_rim_clear_position(crossing_local, rim_normal_local, ball_radius)
+	_resolve_kinematic_cup_reflection(ball, rim_normal_local, clear_local)
 
 
-func _apply_velocity_deflection(
+func _resolve_kinematic_cup_reflection(
 	ball: RigidBody3D,
-	normal_world: Vector3,
-	bounce_scale: float,
-	tangent_scale: float
+	normal_local: Vector3,
+	clear_local: Vector3
+) -> void:
+	_apply_kinematic_reflection(ball, _to_world_normal(normal_local))
+	ball.global_position = global_transform * clear_local
+	ball.sleeping = false
+
+
+func _apply_kinematic_reflection(
+	ball: RigidBody3D,
+	normal_world: Vector3
 ) -> void:
 	if normal_world.length_squared() <= EPSILON:
 		return
@@ -555,38 +619,20 @@ func _apply_velocity_deflection(
 	var velocity := ball.linear_velocity
 	var normal_speed := velocity.dot(normal)
 	if normal_speed >= 0.0:
-		return
+		normal = -normal
+		normal_speed = velocity.dot(normal)
+		if normal_speed >= 0.0:
+			return
 
-	var normal_velocity := normal * normal_speed
-	var tangent_velocity := velocity - normal_velocity
-	ball.linear_velocity = tangent_velocity * tangent_scale - normal_velocity * bounce_scale
-	ball.angular_velocity *= maxf(0.0, tangent_scale)
+	ball.linear_velocity = velocity - normal * (2.0 * normal_speed)
 	ball.sleeping = false
 
 
-func _apply_side_position_correction(
-	ball: RigidBody3D,
-	current_local: Vector3,
-	signed_distance: float,
-	ball_radius: float
-) -> void:
-	var radial := Vector2(current_local.x, current_local.z)
-	var radial_length := radial.length()
-	if radial_length <= EPSILON:
-		return
+func _get_rim_clear_position(contact_local: Vector3, normal_local: Vector3, ball_radius: float) -> Vector3:
+	if normal_local.length_squared() <= EPSILON:
+		return contact_local
 
-	var wall_radius := _get_wall_radius_at_y(clampf(current_local.y, cup_bottom_y, cup_rim_y))
-	var target_signed := ball_radius if signed_distance >= 0.0 else -ball_radius
-	var target_radius := maxf(0.0, wall_radius + target_signed)
-	var correction_amount := clampf(side_penetration_correction_scale, 0.0, 1.0)
-	var corrected_radius := lerpf(radial_length, target_radius, correction_amount)
-	var direction := radial / radial_length
-	var corrected_local := Vector3(
-		direction.x * corrected_radius,
-		current_local.y,
-		direction.y * corrected_radius
-	)
-	ball.global_position = global_transform * corrected_local
+	return contact_local + normal_local.normalized() * (maxf(ball_radius, 0.0) + maxf(non_score_clearance, 0.0))
 
 
 func _record_synthetic_cup_contact(ball: RigidBody3D, surface_id: StringName) -> void:
@@ -694,6 +740,7 @@ func _refresh_collision_parameters() -> void:
 		"min_score_downward_speed": min_score_downward_speed,
 		"rim_top_radial_normal_scale": rim_top_radial_normal_scale,
 		"rim_top_upward_normal_scale": rim_top_upward_normal_scale,
+		"non_score_clearance": non_score_clearance,
 	})
 
 
