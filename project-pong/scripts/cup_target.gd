@@ -4,6 +4,7 @@ class_name CupTarget
 const PongPhysicsSurfaceScript := preload("res://scripts/pong_physics_surface.gd")
 const CupLiquidVisualScript := preload("res://scripts/cup_liquid_visual.gd")
 const ShotPhysicsScript := preload("res://scripts/match/shot_physics.gd")
+const CupCollisionModelScript := preload("res://scripts/match/cup_collision_model.gd")
 const ContactSummaryScript := preload("res://scripts/house_rules/shot_contact_summary.gd")
 
 const DEFAULT_BALL_RADIUS := 0.02
@@ -14,6 +15,7 @@ const EPSILON := 0.0001
 @export var visual_scene: PackedScene
 @export var collision_scene: PackedScene
 @export var math_sensor_enabled := true
+@export var shared_collision_model_enabled := false
 @export var legacy_mesh_collision_enabled := false
 @export var liquid_enabled := true
 @export var liquid_scene: PackedScene
@@ -63,12 +65,14 @@ var _interaction_bodies: Array[Node3D] = []
 var _captured_bodies: Array[Node3D] = []
 var _last_local_positions: Dictionary = {}
 var _capture_animation_states: Dictionary = {}
+var _collision_parameters: Dictionary = {}
 var _liquid_visual: Node3D
 var _interaction_area: Area3D
 
 
 func _ready() -> void:
 	set_physics_process(false)
+	_refresh_collision_parameters()
 	_add_visual()
 	_add_liquid_visual()
 	if legacy_mesh_collision_enabled:
@@ -130,6 +134,8 @@ func _physics_process(delta: float) -> void:
 		var ball_radius := ShotPhysicsScript.get_ball_radius(ball, DEFAULT_BALL_RADIUS)
 		if _captured_bodies.has(ball):
 			continue
+		elif shared_collision_model_enabled:
+			_handle_shared_collision_model(ball, previous_local, current_local, ball_radius)
 		else:
 			var handled_top := _try_handle_top_crossing(ball, previous_local, current_local, ball_radius)
 			if not handled_top and not _try_handle_score_capture(ball, current_local, ball_radius):
@@ -300,11 +306,12 @@ func _on_score_area_body_entered(body: Node3D) -> void:
 		_on_interaction_body_entered(body)
 		var ball := body as RigidBody3D
 		if ball != null:
-			_try_handle_score_capture(
-				ball,
-				_to_local_position(ball.global_position),
-				ShotPhysicsScript.get_ball_radius(ball, DEFAULT_BALL_RADIUS)
-			)
+			var current_local := _to_local_position(ball.global_position)
+			var ball_radius := ShotPhysicsScript.get_ball_radius(ball, DEFAULT_BALL_RADIUS)
+			if shared_collision_model_enabled:
+				_handle_shared_collision_model(ball, current_local, current_local, ball_radius)
+			else:
+				_try_handle_score_capture(ball, current_local, ball_radius)
 		return
 
 	_apply_score_capture(body)
@@ -433,6 +440,45 @@ func _try_handle_side_deflection(
 	return true
 
 
+func _handle_shared_collision_model(
+	ball: RigidBody3D,
+	previous_local: Vector3,
+	current_local: Vector3,
+	ball_radius: float
+) -> bool:
+	var collision := CupCollisionModelScript.evaluate_ball_motion(
+		previous_local,
+		current_local,
+		_to_local_vector(ball.linear_velocity),
+		ball_radius,
+		_collision_parameters
+	)
+	var event_id := int(collision.get("event", CupCollisionModelScript.EVENT_NONE))
+	if event_id == CupCollisionModelScript.EVENT_SCORE_CAPTURE:
+		var capture_local: Vector3 = collision.get("capture_local_position", collision.get("event_local_position", current_local))
+		_capture_ball(ball, capture_local, ball_radius)
+		return true
+
+	if event_id == CupCollisionModelScript.EVENT_RIM_CONTACT:
+		var rim_local: Vector3 = collision.get("event_local_position", current_local)
+		var rim_normal_local: Vector3 = collision.get("event_normal_local", Vector3.ZERO)
+		_apply_rim_deflection(ball, rim_local, ball_radius, rim_normal_local)
+		_record_synthetic_cup_contact(ball, SURFACE_CUP_RIM)
+		return true
+
+	if event_id == CupCollisionModelScript.EVENT_SIDE_CONTACT:
+		var side_normal_local: Vector3 = collision.get("event_normal_local", Vector3.ZERO)
+		if side_normal_local.length_squared() <= EPSILON:
+			return false
+		var reference_signed_distance := float(collision.get("reference_signed_distance", 0.0))
+		_apply_velocity_deflection(ball, _to_world_normal(side_normal_local), side_deflection_bounce, side_deflection_tangent_scale)
+		_apply_side_position_correction(ball, current_local, reference_signed_distance, ball_radius)
+		_record_synthetic_cup_contact(ball, SURFACE_CUP_WALL)
+		return true
+
+	return false
+
+
 func _capture_ball(ball: RigidBody3D, current_local: Vector3, ball_radius: float) -> void:
 	if not _captured_bodies.has(ball):
 		_captured_bodies.append(ball)
@@ -482,10 +528,16 @@ func _update_captured_ball(ball: RigidBody3D, ball_radius: float, delta: float) 
 		_capture_animation_states[ball_id] = state
 
 
-func _apply_rim_deflection(ball: RigidBody3D, crossing_local: Vector3, ball_radius: float) -> void:
+func _apply_rim_deflection(
+	ball: RigidBody3D,
+	crossing_local: Vector3,
+	ball_radius: float,
+	normal_local := Vector3.ZERO
+) -> void:
 	var sample_local := crossing_local
 	sample_local.y = cup_rim_y + maxf(rim_tube_radius, ball_radius * 0.25)
-	var rim_normal_world := _to_world_normal(_get_flat_top_rim_normal(sample_local))
+	var rim_normal_local := normal_local if normal_local.length_squared() > EPSILON else _get_flat_top_rim_normal(sample_local)
+	var rim_normal_world := _to_world_normal(rim_normal_local)
 	_apply_velocity_deflection(ball, rim_normal_world, rim_deflection_bounce, rim_deflection_tangent_scale)
 	ball.global_position += rim_normal_world * ball_radius * rim_penetration_correction_scale
 
@@ -628,6 +680,21 @@ func _get_flat_top_rim_normal(sample_local: Vector3) -> Vector3:
 		rim_top_upward_normal_scale,
 		radial_direction.y * rim_top_radial_normal_scale
 	).normalized()
+
+
+func _refresh_collision_parameters() -> void:
+	_collision_parameters = CupCollisionModelScript.build_parameters({
+		"bottom_y": cup_bottom_y,
+		"rim_y": cup_rim_y,
+		"bottom_radius": cup_bottom_radius,
+		"rim_radius": cup_rim_radius,
+		"inner_score_radius": cup_inner_score_radius,
+		"rim_tube_radius": rim_tube_radius,
+		"rim_band_ball_radius_scale": rim_band_ball_radius_scale,
+		"min_score_downward_speed": min_score_downward_speed,
+		"rim_top_radial_normal_scale": rim_top_radial_normal_scale,
+		"rim_top_upward_normal_scale": rim_top_upward_normal_scale,
+	})
 
 
 func _clamp_capture_start(local_position: Vector3, ball_radius: float) -> Vector3:

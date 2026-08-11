@@ -27,6 +27,7 @@ static func build_triangular_rack(parent: Node3D, config: Dictionary) -> Array[N
 	var name_start_index := int(config.get("name_start_index", 1))
 	var owner_slot := int(config.get("owner_slot", 0))
 	var owner_side := StringName(str(config.get("owner_side", "")))
+	var shared_collision_model_enabled := bool(config.get("shared_collision_model_enabled", false))
 
 	var cup_index := 0
 	for row in range(MatchConstants.RACK_ROWS):
@@ -39,6 +40,7 @@ static func build_triangular_rack(parent: Node3D, config: Dictionary) -> Array[N
 			cup.name = "%s_%02d" % [name_prefix, cup_index + name_start_index]
 			cup.set("visual_scene", cup_visual_scene)
 			cup.set("collision_scene", cup_collision_scene)
+			cup.set("shared_collision_model_enabled", shared_collision_model_enabled)
 			cup.position = Vector3(
 				back_row_origin.x - row_width * 0.5 + float(column) * cup_spacing,
 				back_row_origin.y,

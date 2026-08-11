@@ -78,6 +78,7 @@ camera_path = NodePath("Camera3D")
 ui_root_path = NodePath("TestingUi/Root")
 cup_visual_scene = ExtResource("2_cup_visual")
 cup_collision_scene = ExtResource("3_cup_collision")
+shared_cup_collision_model_enabled = true
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_1")

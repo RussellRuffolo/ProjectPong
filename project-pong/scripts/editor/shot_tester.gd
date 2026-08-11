@@ -30,6 +30,7 @@ const MAX_RELEASE_ANGLE_DEGREES := 88.0
 @export var ui_root_path: NodePath
 @export var cup_visual_scene: PackedScene
 @export var cup_collision_scene: PackedScene
+@export var shared_cup_collision_model_enabled := true
 @export var table_center_z := -1.56
 @export var table_length_meters := 2.7432
 @export var rack_end_margin := 0.14
@@ -303,6 +304,7 @@ func _build_target_rack() -> void:
 		"name_prefix": "ShotTesterCup",
 		"owner_slot": TARGET_SLOT,
 		"owner_side": TARGET_SIDE,
+		"shared_collision_model_enabled": shared_cup_collision_model_enabled,
 	})
 	_rack_state = RackStateScript.new()
 	_rack_state.configure(cups, TARGET_SLOT, TARGET_SIDE)
@@ -921,7 +923,10 @@ func _update_status() -> void:
 	_status_label.text = "%s\nCups remaining: %s\nRules: %s\n%s" % [
 		status,
 		_active_cup_indices,
-		_house_rules_profile.get_compact_ruleset_id() if _house_rules_profile != null else "",
+		"%s | collision %s" % [
+			_house_rules_profile.get_compact_ruleset_id() if _house_rules_profile != null else "",
+			"shared" if shared_cup_collision_model_enabled else "cup-local",
+		],
 		last,
 	]
 
@@ -1156,6 +1161,7 @@ func _build_initial_conditions() -> Dictionary:
 		"effective_release_angle_degrees": _attempt_effective_release_angle,
 		"launch_velocity": _attempt_launch_velocity,
 		"fallback_reason": _attempt_fallback_reason,
+		"shared_cup_collision_model_enabled": shared_cup_collision_model_enabled,
 	}
 
 
@@ -1553,6 +1559,7 @@ func _build_log_export_text() -> String:
 	var lines: Array[String] = [
 		"Shot Tester Log",
 		"Rules: %s" % (_house_rules_profile.get_compact_ruleset_id() if _house_rules_profile != null else ""),
+		"Collision: %s" % ("shared" if shared_cup_collision_model_enabled else "cup-local"),
 		"Shots: %d" % _shot_log.size(),
 		"",
 	]

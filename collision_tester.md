@@ -32,6 +32,15 @@ The scene should stay small, visual, and fast to iterate on. It is a proving gro
 - Ball/frustum intersection is calculated from the ball center point plus `ball_radius`.
 - The current intersection test reduces the rotationally symmetric frustum to a 2D radial/Y cross-section and compares the sphere radius against the closest point on the closed frustum profile.
 - The ball turns green when it intersects the frustum and red when it does not.
+- The ball turns blue for `top_inner` diagnostic overlap and yellow for `top_rim_band` overlap.
+- Rim-band size is adjustable with the `Rim Band Scale` UI field, interpreted as a multiple of the current ball radius.
+- The tester reports a diagnostic classification:
+  - `outside`
+  - `side_wall`
+  - `inside_volume`
+  - `top_inner`
+  - `top_rim_band`
+  - `bottom_cap`
 - A toggleable normal vector visualization draws a fixed-length visual-only arrow from the ball center along the nearest-surface normal.
 - The normal vector readout shows nearest local point, local direction, and signed center distance.
 - Runtime axis gizmos are parented to the ball:
@@ -112,6 +121,8 @@ Implementation notes:
 
 Add detection for balls intersecting the top opening of the frustum and differentiate inner-opening overlap from overlap with a narrow concentric rim band around the cup's outer top edge.
 
+First pass status: implemented in `res://scripts/editor/collision_tester.gd`.
+
 Expected behavior:
 
 - Ball turns blue when it overlaps the inner top opening without touching the rim band.
@@ -132,11 +143,17 @@ Recommended diagnostic classifications:
 Classification guidance:
 
 - Use `rim_y` and `rim_radius` as the top opening reference.
-- Define the rim band as an exported parameter. Prefer a ball-radius scale first, with an optional fixed minimum/maximum if tuning shows the band is too sensitive.
+- Define the rim band as an exported parameter. Current first pass uses `rim_band_ball_radius_scale`.
 - `top_inner` means the ball sphere overlaps the top plane inside the rim-band threshold. This is a diagnostic state, not an immediate score.
 - `top_rim_band` means the ball sphere overlaps the annular band near `rim_radius`. This is the future bounce/deflection candidate.
 - Side-wall classification should still work away from the top opening.
 - Classification should be stable near boundaries. Add small epsilons or hysteresis only if repeated dragging shows flicker.
+
+First-pass limitations:
+
+- Classification is based on the current static sphere position, not previous/current motion or velocity.
+- This is enough for the editor diagnostic pass, but gameplay rollout still needs crossing-aware logic so fast shots do not skip top/rim/capture events.
+- Rim-band classification intentionally takes priority over top-inner classification at the boundary.
 
 Future gameplay behavior:
 

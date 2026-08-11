@@ -8,6 +8,12 @@ const MAX_SEGMENTS := 128
 const AXIS_X := 0
 const AXIS_Y := 1
 const AXIS_Z := 2
+const CLASS_OUTSIDE := "outside"
+const CLASS_SIDE_WALL := "side_wall"
+const CLASS_INSIDE_VOLUME := "inside_volume"
+const CLASS_TOP_INNER := "top_inner"
+const CLASS_TOP_RIM_BAND := "top_rim_band"
+const CLASS_BOTTOM_CAP := "bottom_cap"
 
 @export var cup_model_path: NodePath
 @export var ball_model_path: NodePath
@@ -25,6 +31,9 @@ const AXIS_Z := 2
 @export var ball_radius := 0.02
 @export var ball_intersect_color := Color(0.1, 0.82, 0.28, 1.0)
 @export var ball_miss_color := Color(1.0, 0.12, 0.08, 1.0)
+@export var ball_top_inner_color := Color(0.1, 0.42, 1.0, 1.0)
+@export var ball_rim_band_color := Color(1.0, 0.86, 0.08, 1.0)
+@export_range(0.05, 2.0, 0.01) var rim_band_ball_radius_scale := 0.6
 @export var axis_gizmo_enabled := true
 @export var axis_gizmo_length := 0.11
 @export var axis_gizmo_radius := 0.0025
@@ -62,6 +71,7 @@ var _default_bottom_radius := 0.0
 var _default_rim_radius := 0.0
 var _default_radial_segments := 0
 var _default_ball_radius := 0.0
+var _default_rim_band_ball_radius_scale := 0.0
 
 var _visible_check: CheckBox
 var _normal_vector_check: CheckBox
@@ -72,8 +82,10 @@ var _bottom_y_spin: SpinBox
 var _rim_y_spin: SpinBox
 var _segments_spin: SpinBox
 var _ball_radius_spin: SpinBox
+var _rim_band_spin: SpinBox
 var _summary_label: Label
 var _intersection_label: Label
+var _classification_label: Label
 var _normal_vector_label: Label
 var _ball_position_label: Label
 
@@ -176,10 +188,19 @@ func calculate_local_sphere_frustum_intersection(local_position: Vector3, radius
 	var closest_feature := str(normal_snapshot.get("closest_feature", "inside"))
 	var distance := float(normal_snapshot.get("distance_to_surface", 0.0))
 	var distance_squared := distance * distance
+	var intersects := inside or distance_squared <= safe_radius * safe_radius + EPSILON
+	var classification_snapshot := classify_local_sphere_frustum_overlap(local_position, safe_radius, intersects, closest_feature)
 
 	return {
-		"intersects": inside or distance_squared <= safe_radius * safe_radius + EPSILON,
+		"intersects": intersects,
 		"inside": inside,
+		"classification": classification_snapshot.get("classification", CLASS_OUTSIDE),
+		"top_plane_overlap": classification_snapshot.get("top_plane_overlap", false),
+		"rim_band_overlap": classification_snapshot.get("rim_band_overlap", false),
+		"top_inner_overlap": classification_snapshot.get("top_inner_overlap", false),
+		"rim_band_width": classification_snapshot.get("rim_band_width", 0.0),
+		"rim_band_inner_radius": classification_snapshot.get("rim_band_inner_radius", 0.0),
+		"rim_band_outer_radius": classification_snapshot.get("rim_band_outer_radius", 0.0),
 		"ball_radius": safe_radius,
 		"ball_local_position": local_position,
 		"radial_distance": radial_distance,
@@ -191,6 +212,57 @@ func calculate_local_sphere_frustum_intersection(local_position: Vector3, radius
 		"signed_center_distance": normal_snapshot.get("signed_center_distance", 0.0),
 		"distance_to_frustum": distance,
 		"clearance": distance - safe_radius,
+	}
+
+
+func classify_local_sphere_frustum_overlap(
+	local_position: Vector3,
+	radius: float,
+	intersects: bool,
+	closest_feature: String
+) -> Dictionary:
+	var safe_radius := maxf(radius, 0.0)
+	var radial_distance := Vector2(local_position.x, local_position.z).length()
+	var rim_band_width := _get_rim_band_width(safe_radius)
+	var rim_band_inner_radius := maxf(0.0, rim_radius - rim_band_width)
+	var rim_band_outer_radius := rim_radius + rim_band_width
+	var projected_min_radius := maxf(0.0, radial_distance - safe_radius)
+	var projected_max_radius := radial_distance + safe_radius
+	var top_plane_overlap := absf(local_position.y - rim_y) <= safe_radius + EPSILON
+	var rim_band_overlap := (
+		top_plane_overlap
+		and projected_max_radius >= rim_band_inner_radius - EPSILON
+		and projected_min_radius <= rim_band_outer_radius + EPSILON
+	)
+	var top_inner_overlap := (
+		top_plane_overlap
+		and not rim_band_overlap
+		and projected_max_radius < rim_band_inner_radius - EPSILON
+	)
+	var classification := CLASS_OUTSIDE
+
+	if rim_band_overlap:
+		classification = CLASS_TOP_RIM_BAND
+	elif top_inner_overlap:
+		classification = CLASS_TOP_INNER
+	elif intersects:
+		if _is_cross_section_point_inside_frustum(Vector2(radial_distance, local_position.y)):
+			classification = CLASS_INSIDE_VOLUME
+		elif closest_feature == "bottom_cap":
+			classification = CLASS_BOTTOM_CAP
+		else:
+			classification = CLASS_SIDE_WALL
+
+	return {
+		"classification": classification,
+		"top_plane_overlap": top_plane_overlap,
+		"rim_band_overlap": rim_band_overlap,
+		"top_inner_overlap": top_inner_overlap,
+		"rim_band_width": rim_band_width,
+		"rim_band_inner_radius": rim_band_inner_radius,
+		"rim_band_outer_radius": rim_band_outer_radius,
+		"projected_min_radius": projected_min_radius,
+		"projected_max_radius": projected_max_radius,
 	}
 
 
@@ -300,6 +372,7 @@ func _cache_initial_defaults() -> void:
 	_default_rim_radius = rim_radius
 	_default_radial_segments = radial_segments
 	_default_ball_radius = ball_radius
+	_default_rim_band_ball_radius_scale = rim_band_ball_radius_scale
 
 
 func _create_ball_status_material() -> void:
@@ -514,8 +587,8 @@ func _build_ui() -> void:
 	panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	panel.anchor_left = 0.01
 	panel.anchor_top = 0.02
-	panel.anchor_right = 0.38
-	panel.anchor_bottom = 0.72
+	panel.anchor_right = 0.42
+	panel.anchor_bottom = 0.84
 	_ui_root.add_child(panel)
 	_ui_panel = panel
 
@@ -555,10 +628,15 @@ func _build_ui() -> void:
 	_rim_y_spin = _add_spin_row(main_vbox, "Rim Y", rim_y, -0.05, 0.24, 0.001, _on_rim_y_changed)
 	_segments_spin = _add_spin_row(main_vbox, "Segments", float(radial_segments), float(MIN_SEGMENTS), float(MAX_SEGMENTS), 1.0, _on_segments_changed)
 	_ball_radius_spin = _add_spin_row(main_vbox, "Ball Radius", ball_radius, 0.001, 0.08, 0.001, _on_ball_radius_changed)
+	_rim_band_spin = _add_spin_row(main_vbox, "Rim Band Scale", rim_band_ball_radius_scale, 0.05, 2.0, 0.01, _on_rim_band_scale_changed)
 
 	_intersection_label = Label.new()
 	_intersection_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	main_vbox.add_child(_intersection_label)
+
+	_classification_label = Label.new()
+	_classification_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	main_vbox.add_child(_classification_label)
 
 	_normal_vector_label = Label.new()
 	_normal_vector_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -625,10 +703,14 @@ func _refresh_ui() -> void:
 		_segments_spin.value = radial_segments
 	if _ball_radius_spin != null:
 		_ball_radius_spin.value = ball_radius
+	if _rim_band_spin != null:
+		_rim_band_spin.value = rim_band_ball_radius_scale
 	if _summary_label != null:
 		_summary_label.text = "r(y) %.3f to %.3f, height %.3f m" % [bottom_radius, rim_radius, _get_height()]
 	if _intersection_label != null:
 		_intersection_label.text = _format_intersection_status()
+	if _classification_label != null:
+		_classification_label.text = _format_classification_status()
 	if _normal_vector_label != null:
 		_normal_vector_label.text = _format_normal_vector_status()
 	if _ball_position_label != null:
@@ -701,8 +783,17 @@ func _on_ball_radius_changed(value: float) -> void:
 	_refresh_ui()
 
 
+func _on_rim_band_scale_changed(value: float) -> void:
+	if _ui_updating:
+		return
+	rim_band_ball_radius_scale = maxf(value, 0.0)
+	_update_ball_intersection()
+	_refresh_ui()
+
+
 func _on_reset_defaults_pressed() -> void:
 	ball_radius = maxf(_default_ball_radius, EPSILON)
+	rim_band_ball_radius_scale = maxf(_default_rim_band_ball_radius_scale, 0.0)
 	_sync_ball_visual_radius()
 	configure_frustum(
 		_default_bottom_radius,
@@ -720,6 +811,10 @@ func _ensure_positive_height() -> void:
 
 func _get_height() -> float:
 	return maxf(rim_y - bottom_y, EPSILON)
+
+
+func _get_rim_band_width(radius: float) -> float:
+	return maxf(radius * rim_band_ball_radius_scale, EPSILON)
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
@@ -854,16 +949,25 @@ func _update_ball_intersection() -> void:
 	_last_normal_snapshot = calculate_local_nearest_surface_snapshot(global_transform.affine_inverse() * _ball_model.global_position)
 	_last_ball_position = _ball_model.global_position
 	_has_last_ball_position = true
-	_apply_ball_status_color(bool(_last_intersection_snapshot.get("intersects", false)))
+	_apply_ball_status_color(str(_last_intersection_snapshot.get("classification", CLASS_OUTSIDE)))
 	_update_normal_vector_visual()
 	_refresh_ui()
 
 
-func _apply_ball_status_color(intersects: bool) -> void:
+func _apply_ball_status_color(classification: String) -> void:
 	if _ball_material == null:
 		return
 
-	var status_color := ball_intersect_color if intersects else ball_miss_color
+	var status_color := ball_miss_color
+	match classification:
+		CLASS_TOP_RIM_BAND:
+			status_color = ball_rim_band_color
+		CLASS_TOP_INNER:
+			status_color = ball_top_inner_color
+		CLASS_OUTSIDE:
+			status_color = ball_miss_color
+		_:
+			status_color = ball_intersect_color
 	_ball_material.albedo_color = status_color
 	_ball_material.emission = status_color
 
@@ -986,6 +1090,22 @@ func _format_intersection_status() -> String:
 		feature,
 		distance,
 		clearance,
+	]
+
+
+func _format_classification_status() -> String:
+	if _last_intersection_snapshot.is_empty():
+		return "Classification: unavailable"
+
+	var classification := str(_last_intersection_snapshot.get("classification", CLASS_OUTSIDE))
+	var rim_band_width := float(_last_intersection_snapshot.get("rim_band_width", 0.0))
+	var rim_inner := float(_last_intersection_snapshot.get("rim_band_inner_radius", 0.0))
+	var rim_outer := float(_last_intersection_snapshot.get("rim_band_outer_radius", 0.0))
+	return "Classification: %s | rim band %.3f m (%.3f to %.3f)" % [
+		classification,
+		rim_band_width,
+		rim_inner,
+		rim_outer,
 	]
 
 
