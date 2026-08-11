@@ -1,8 +1,6 @@
 [gd_scene format=3 uid="uid://dfewcpayiu0qu"]
 
 [ext_resource type="Script" uid="uid://cyi0yr6jj02dx" path="res://scripts/computer_classic_match_game.gd" id="1_game"]
-[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="2_cup_visual"]
-[ext_resource type="PackedScene" uid="uid://cdb38b288aor5" path="res://models/red_solo_cup_collision.glb" id="3_cup_collision"]
 [ext_resource type="Resource" path="res://resources/computer_players/steady_classic.tres" id="4_sm61t"]
 [ext_resource type="Script" uid="uid://3cisy0phwqye" path="res://scripts/pong_physics_surface.gd" id="4_surface"]
 [ext_resource type="Script" uid="uid://dnwkg054yesh8" path="res://scripts/throwable_ball.gd" id="5_ball"]
@@ -77,8 +75,6 @@ export_log_button_path = NodePath("TestingUi/Root/Panel/Margin/VBox/Controls/Exp
 shot_log_list_path = NodePath("TestingUi/Root/Panel/Margin/VBox/ShotLogScroll/ShotLogList")
 log_export_status_label_path = NodePath("TestingUi/Root/Panel/Margin/VBox/ExportStatusLabel")
 camera_path = NodePath("Camera3D")
-cup_visual_scene = ExtResource("2_cup_visual")
-cup_collision_scene = ExtResource("3_cup_collision")
 autoplay_on_ready = false
 side_one_computer_player_profile = ExtResource("4_sm61t")
 side_two_computer_player_profile = ExtResource("4_sm61t")

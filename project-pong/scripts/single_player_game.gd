@@ -16,8 +16,6 @@ const HouseRulesResolverScript := preload("res://scripts/house_rules/house_rules
 @export var ball_path: NodePath
 @export var cup_parent_path: NodePath
 @export var score_label_path: NodePath
-@export var cup_visual_scene: PackedScene
-@export var cup_collision_scene: PackedScene
 @export var rack_origin := Vector3(0.0, 0.78, -1.56)
 @export var cup_spacing := 0.105
 @export var miss_height := 0.45
@@ -26,11 +24,11 @@ const HouseRulesResolverScript := preload("res://scripts/house_rules/house_rules
 @export var out_of_bounds_z_max := 0.35
 @export var settled_speed := 0.08
 @export var settled_after_seconds := 1.25
-@export var scoring_settle_seconds := 0.35
 @export var max_attempt_seconds := 6.0
 @export var reset_delay := 0.45
 @export var scored_reset_delay := 0.8
 @export var cup_remove_delay := 0.65
+@export var captured_cup_remove_delay := 0.1
 
 var _ball: ThrowableBall
 var _cup_parent: Node3D
@@ -87,7 +85,7 @@ func _physics_process(delta: float) -> void:
 
 	_attempt_elapsed += delta
 	_contact_tracker.update(_attempt_elapsed)
-	if _try_confirm_score(delta):
+	if _try_confirm_score():
 		return
 
 	if _is_miss():
@@ -101,8 +99,6 @@ func _build_starting_rack() -> void:
 	_contact_tracker.clear()
 
 	var cups := CupRackBuilderScript.build_triangular_rack(_cup_parent, {
-		"cup_visual_scene": cup_visual_scene,
-		"cup_collision_scene": cup_collision_scene,
 		"back_row_origin": rack_origin,
 		"row_direction_z": 1.0,
 		"cup_spacing": cup_spacing,
@@ -130,11 +126,13 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 		scored_cup,
 		scored_reset_delay if was_score else reset_delay
 	)
+	if bool(outcome.get("was_score", false)) and scored_cup != null:
+		_ball.begin_score_capture(scored_cup)
 	_reset_countdown = float(outcome.get("reset_delay", reset_delay))
 	_score_tracker.reset()
 
 	if bool(outcome.get("was_score", false)):
-		var removed_count := _apply_removed_cup_indices(outcome.get("removed_cup_indices", []))
+		var removed_count := _apply_removed_cup_indices(outcome.get("removed_cup_indices", []), scored_cup)
 		_score += removed_count
 		_cups_remaining = _rack_state.remaining_count()
 		print("[Game] Score removed %d cup(s). %d cups remaining.%s" % [
@@ -153,7 +151,7 @@ func _is_miss() -> bool:
 		_ball,
 		_attempt_elapsed,
 		_get_attempt_bounds(),
-		_get_ball_resting_cup(),
+		_get_ball_score_contact_candidate(),
 		_is_ball_settled()
 	)
 
@@ -174,9 +172,9 @@ func _update_score_label() -> void:
 	_score_label.text = "Score: %d / 10\nCups: %d" % [_score, _cups_remaining]
 
 
-func _try_confirm_score(delta: float) -> bool:
-	var resting_cup := _get_ball_resting_cup()
-	var confirmed_cup := _score_tracker.update(delta, resting_cup, _is_ball_settled(), scoring_settle_seconds)
+func _try_confirm_score() -> bool:
+	var contact_candidate := _get_ball_score_contact_candidate()
+	var confirmed_cup := _score_tracker.confirm_contact_candidate(contact_candidate)
 	if confirmed_cup == null:
 		return false
 
@@ -184,8 +182,8 @@ func _try_confirm_score(delta: float) -> bool:
 	return true
 
 
-func _get_ball_resting_cup() -> Node3D:
-	return _rack_state.find_resting_cup(_ball)
+func _get_ball_score_contact_candidate() -> Node3D:
+	return _rack_state.find_score_contact_candidate(_ball)
 
 
 func _is_ball_settled() -> bool:
@@ -216,7 +214,7 @@ func _build_shot_context(contact_summary):
 	return context
 
 
-func _apply_removed_cup_indices(values: Variant) -> int:
+func _apply_removed_cup_indices(values: Variant, physical_scoring_cup: Node3D = null) -> int:
 	var removed_count := 0
 	var cup_indices := _read_int_array(values)
 	for cup_index in cup_indices:
@@ -225,7 +223,10 @@ func _apply_removed_cup_indices(values: Variant) -> int:
 
 		var cup := _rack_state.mark_scored(cup_index)
 		if cup != null and is_instance_valid(cup):
-			_pending_cup_removals.queue_scored_cup(cup, cup_remove_delay)
+			if cup == physical_scoring_cup:
+				_pending_cup_removals.queue_scored_cup(cup, captured_cup_remove_delay, _ball)
+			else:
+				_pending_cup_removals.queue_scored_cup(cup, cup_remove_delay)
 			removed_count += 1
 	return removed_count
 

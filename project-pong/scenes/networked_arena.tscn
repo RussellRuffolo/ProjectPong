@@ -8,8 +8,6 @@
 [ext_resource type="Script" path="res://scripts/photon_lobby_ui.gd" id="6_lobby"]
 [ext_resource type="Script" path="res://scripts/hand_grabber.gd" id="7_handgrab"]
 [ext_resource type="Script" path="res://scripts/networked_pong_ball.gd" id="8_ball"]
-[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="9_cup_visual"]
-[ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="10_cup_collision"]
 [ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="11_surface"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
@@ -257,8 +255,6 @@ ball_path = NodePath("../../Grabbables/NetworkedBall")
 player_one_cup_parent_path = NodePath("../../CupRacks/PlayerOneCupRack")
 player_two_cup_parent_path = NodePath("../../CupRacks/PlayerTwoCupRack")
 score_label_path = NodePath("../../ScoreLabel")
-cup_visual_scene = ExtResource("9_cup_visual")
-cup_collision_scene = ExtResource("10_cup_collision")
 
 [node name="NetworkedArena" type="Node" parent="Network"]
 script = ExtResource("3_arena")

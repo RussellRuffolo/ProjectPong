@@ -30,8 +30,6 @@ const PLAYER_TWO_SLOT := 2
 @export var player_one_cup_parent_path: NodePath
 @export var player_two_cup_parent_path: NodePath
 @export var score_label_path: NodePath
-@export var cup_visual_scene: PackedScene
-@export var cup_collision_scene: PackedScene
 @export var table_center_z := -1.35
 @export var table_length_meters := 2.7432
 @export var rack_back_row_offset_from_table_end := 0.28
@@ -46,7 +44,6 @@ const PLAYER_TWO_SLOT := 2
 @export var out_of_bounds_z_max := 0.85
 @export var settled_speed := 0.08
 @export var settled_after_seconds := 1.25
-@export var scoring_settle_seconds := 0.35
 @export var max_attempt_seconds := 7.0
 @export var reset_delay := 0.45
 @export var scored_reset_delay := 0.8
@@ -128,7 +125,7 @@ func _physics_process(delta: float) -> void:
 
 	_attempt_elapsed += delta
 	_contact_tracker.update(_attempt_elapsed)
-	if _try_confirm_score(delta):
+	if _try_confirm_score():
 		return
 
 	if _is_miss():
@@ -358,9 +355,9 @@ func _on_ball_released(_grabber: Node3D, _release_linear_velocity: Vector3, _rel
 	])
 
 
-func _try_confirm_score(delta: float) -> bool:
-	var resting_cup := _get_ball_resting_opponent_cup()
-	var confirmed_cup := _score_tracker.update(delta, resting_cup, _is_ball_settled(), scoring_settle_seconds)
+func _try_confirm_score() -> bool:
+	var contact_candidate := _get_ball_score_contact_candidate()
+	var confirmed_cup := _score_tracker.confirm_contact_candidate(contact_candidate)
 	if confirmed_cup == null:
 		return false
 
@@ -396,6 +393,8 @@ func _resolve_attempt(was_score: bool, scored_cup: Node3D) -> void:
 	)
 	_sync_model_from_network_state()
 	var transition := _match_model.apply_shot_outcome(active_slot, opponent_slot, outcome)
+	if bool(transition.get("resolved_score", false)) and valid_score:
+		_ball.begin_score_capture(scored_cup)
 	var next_scored_cups: Dictionary = transition.get("scored_cups_by_slot", _match_model.get_scored_cups_by_slot())
 	var next_scores := _read_two_ints(transition.get("scores_by_slot", _match_model.get_scores_by_slot()))
 	var next_winner_slot := int(transition.get("winner_slot", 0))
@@ -435,19 +434,19 @@ func _is_miss() -> bool:
 		_ball,
 		_attempt_elapsed,
 		_get_attempt_bounds(),
-		_get_ball_resting_opponent_cup(),
+		_get_ball_score_contact_candidate(),
 		_is_ball_settled()
 	)
 
 
-func _get_ball_resting_opponent_cup() -> Node3D:
+func _get_ball_score_contact_candidate() -> Node3D:
 	if _ball == null:
 		return null
 
 	var active_slot := _get_player_slot(active_player_id)
 	var opponent_slot := _get_opponent_slot(active_slot)
 	var rack_state = _get_rack_state(opponent_slot)
-	return rack_state.find_resting_cup(_ball) if rack_state != null else null
+	return rack_state.find_score_contact_candidate(_ball) if rack_state != null else null
 
 
 func _is_ball_settled() -> bool:
@@ -533,8 +532,6 @@ func _build_starting_racks() -> void:
 	var player_one_back_z := table_center_z + half_length - rack_back_row_offset_from_table_end
 	var player_two_back_z := table_center_z - half_length + rack_back_row_offset_from_table_end
 	var player_one_cups := CupRackBuilderScript.build_triangular_rack(_player_one_cup_parent, {
-		"cup_visual_scene": cup_visual_scene,
-		"cup_collision_scene": cup_collision_scene,
 		"back_row_origin": Vector3(0.0, cup_height_y, player_one_back_z),
 		"row_direction_z": -1.0,
 		"cup_spacing": cup_spacing,
@@ -542,8 +539,6 @@ func _build_starting_racks() -> void:
 		"owner_slot": PLAYER_ONE_SLOT,
 	})
 	var player_two_cups := CupRackBuilderScript.build_triangular_rack(_player_two_cup_parent, {
-		"cup_visual_scene": cup_visual_scene,
-		"cup_collision_scene": cup_collision_scene,
 		"back_row_origin": Vector3(0.0, cup_height_y, player_two_back_z),
 		"row_direction_z": 1.0,
 		"cup_spacing": cup_spacing,

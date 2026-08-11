@@ -13,17 +13,20 @@ func size() -> int:
 	return _items.size()
 
 
-func queue_scored_cup(cup: Node3D, delay_seconds: float) -> void:
+func queue_scored_cup(cup: Node3D, delay_seconds: float, capture_ball: Node3D = null) -> void:
 	if cup == null or not is_instance_valid(cup):
 		return
 	if _has_cup(cup):
 		return
 
 	_mark_cup_scored(cup)
-	_items.append({
+	var item := {
 		"cup": cup,
 		"countdown": delay_seconds,
-	})
+	}
+	if capture_ball != null and is_instance_valid(capture_ball):
+		item["capture_ball"] = capture_ball
+	_items.append(item)
 
 
 func queue_scored_cup_key(slot: int, cup_index: int, cup: Node3D, delay_seconds: float) -> void:
@@ -42,6 +45,8 @@ func queue_scored_cup_key(slot: int, cup_index: int, cup: Node3D, delay_seconds:
 
 func update(delta: float, resolver := Callable()) -> void:
 	for index in range(_items.size() - 1, -1, -1):
+		if not _is_capture_ready(_items[index]):
+			continue
 		_items[index]["countdown"] = float(_items[index]["countdown"]) - delta
 		if float(_items[index]["countdown"]) > 0.0:
 			continue
@@ -53,6 +58,28 @@ func update(delta: float, resolver := Callable()) -> void:
 			else:
 				cup.queue_free()
 		_items.remove_at(index)
+
+
+func _is_capture_ready(item: Dictionary) -> bool:
+	var capture_ball = item.get("capture_ball", null)
+	if capture_ball == null:
+		return true
+	if not is_instance_valid(capture_ball):
+		item.erase("capture_ball")
+		return true
+
+	var cup := item.get("cup", null) as Node3D
+	if cup == null or not is_instance_valid(cup):
+		item.erase("capture_ball")
+		return true
+	if not capture_ball.has_method("is_score_capture_finished_for"):
+		item.erase("capture_ball")
+		return true
+	if not bool(capture_ball.call("is_score_capture_finished_for", cup)):
+		return false
+
+	item.erase("capture_ball")
+	return true
 
 
 func _resolve_cup(item: Dictionary, resolver: Callable) -> Node3D:

@@ -103,13 +103,20 @@ func get_scored_indices() -> Array[int]:
 	return _scored_indices.duplicate()
 
 
-func find_resting_cup(ball: Node3D) -> Node3D:
+func find_score_contact_candidate(ball: Node3D) -> Node3D:
 	if ball == null or not is_instance_valid(ball):
 		return null
+	if not ball.has_method("get_score_contact_candidate"):
+		return null
 
-	for cup in get_available_cups():
-		if cup.has_method("is_ball_resting_inside") and cup.call("is_ball_resting_inside", ball):
-			return cup
+	var candidate := ball.call("get_score_contact_candidate") as Node3D
+	if candidate == null or not is_instance_valid(candidate):
+		return null
+	if is_available_cup(candidate) and _cups.has(candidate):
+		return candidate
+
+	if ball.has_method("reject_score_contact_candidate"):
+		ball.call("reject_score_contact_candidate", candidate)
 
 	return null
 

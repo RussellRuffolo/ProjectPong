@@ -30,8 +30,8 @@ The highest-value cleanup is to move repeated mechanics into shared scripts whil
 | --- | --- | --- | --- |
 | Triangular rack construction | `single_player_game.gd:_build_starting_rack()` around line 83, `classic_match_game.gd:_build_starting_racks()` and `_build_rack()` around lines 111 and 127, `network_match_state.gd:_build_starting_racks()` and `_build_rack()` around lines 496 and 522 | Cup naming, indices, owner metadata, and row placement can drift between modes. | `res://scripts/match/cup_rack_builder.gd` plus a small rack-state representation. |
 | Cup parent clearing | `classic_match_game.gd:_clear_cup_parent()` around line 157 and `network_match_state.gd:_clear_cup_parent()` around line 514; Practice does the same inline | Different modes can forget cleanup or score-state reset details. | `CupRackBuilder.clear_cup_parent(parent)`. |
-| Score confirmation after ball settles | `single_player_game.gd:_try_confirm_score()` around line 164, Classic player/computer versions around lines 266 and 337, Network around line 321 | Scoring behavior changes must be repeated, and House Rules would multiply that duplication. | `res://scripts/match/shot_score_tracker.gd`. |
-| Resting-cup lookup | `single_player_game.gd:_get_ball_resting_cup()` around line 182, `classic_match_game.gd:_get_ball_resting_cup()` around line 419, `network_match_state.gd:_get_ball_resting_opponent_cup()` around line 411 | Each mode walks a different source of cups and may disagree about active/scored cups. | Rack state helper with `find_resting_cup(ball, cups)`. |
+| Native score-contact confirmation | Practice, Classic Match, Computer Classic Match, and Online Arena each feed a target-rack-validated contact candidate to the shared tracker. | Match modes still own authoritative outcome resolution, while physical classification remains shared. | `res://scripts/match/shot_score_tracker.gd`. |
+| Native score-contact lookup | Practice, Classic Match, and Online Arena ask their target `RackState` to validate the ball's latched contact candidate. | Each mode must still validate that the contacted cup belongs to the authoritative target rack. | Shared `RackState.find_score_contact_candidate(ball)` helper. |
 | Ball settled check | `single_player_game.gd:_is_ball_settled()` around line 193, `classic_match_game.gd:_is_ball_settled()` around line 561, `network_match_state.gd:_is_ball_settled()` around line 427 | Physics thresholds can drift between modes. | `res://scripts/match/shot_physics.gd`. |
 | Miss and out-of-bounds detection | `single_player_game.gd:_is_miss()` around line 134, Classic player/computer versions around lines 523 and 542, Network around line 392 | Bounds and timeout behavior differ without an explicit reason. | `res://scripts/match/shot_attempt_evaluator.gd` with configurable bounds. |
 | Cup removal delay and visual removal | `single_player_game.gd:_update_pending_cup_removal()` around line 205, `classic_match_game.gd:_update_pending_cup_removals()` around line 404, `network_match_state.gd:_update_pending_cup_removals()` around line 577 | Practice only tracks one pending cup; Classic and Network track arrays with different payloads. | `res://scripts/match/cup_removal_queue.gd`. |
@@ -61,17 +61,17 @@ Create a small shared gameplay folder when implementation begins:
   - Return `Array[Node3D]` in stable cup-index order.
 - `res://scripts/match/rack_state.gd`
   - Track active cups by stable index.
-  - Provide `get_available_cups()`, `get_cup(index)`, `mark_scored(index)`, and `find_resting_cup(ball)`.
+  - Provide `get_available_cups()`, `get_cup(index)`, `mark_scored(index)`, and `find_score_contact_candidate(ball)`.
   - Keep network serialization compact as arrays of scored cup indices.
 - `res://scripts/match/shot_physics.gd`
   - Provide `is_ball_settled(ball, settled_speed, angular_multiplier := 8.0)`.
   - Provide shared ballistic helpers only if Classic computer throws are moved.
 - `res://scripts/match/shot_score_tracker.gd`
-  - Track current score candidate and settled elapsed time.
-  - Confirm a score only after `scoring_settle_seconds`.
+  - Track the current native score-contact candidate.
+  - Confirm the target-rack-validated contact immediately; ball settling is only a miss/timeout concern.
   - Return the confirmed cup or `null`; do not mutate mode state directly.
 - `res://scripts/match/shot_attempt_evaluator.gd`
-  - Evaluate miss conditions using ball position, attempt elapsed time, bounds, settle timing, and resting-cup lookup.
+  - Evaluate miss conditions using ball position, attempt elapsed time, bounds, settle timing, and the absence of a validated score-contact candidate.
   - Accept explicit bounds so Practice, Classic, and Online Arena can preserve current tuned values.
 - `res://scripts/match/cup_removal_queue.gd`
   - Queue scored cups or stable cup references for delayed `remove_from_game()`.
@@ -172,7 +172,6 @@ Use consistent exported tuning names:
 
 - `cup_spacing`
 - `cup_height_y`
-- `scoring_settle_seconds`
 - `settled_speed`
 - `settled_after_seconds`
 - `max_attempt_seconds`
@@ -204,4 +203,3 @@ The first implementation commit should be intentionally boring:
 4. Run validation.
 
 That small pass proves the extraction style before touching Classic Match or network authority.
-

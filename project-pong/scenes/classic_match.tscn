@@ -4,8 +4,6 @@
 [ext_resource type="Script" uid="uid://cfr171bn5mxky" path="res://scripts/hand_grabber.gd" id="2_handgrab"]
 [ext_resource type="Script" uid="uid://dnwkg054yesh8" path="res://scripts/throwable_ball.gd" id="3_ball"]
 [ext_resource type="Script" uid="uid://db4gh17lrq4tp" path="res://scripts/classic_match_game.gd" id="4_game"]
-[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="5_cup_visual"]
-[ext_resource type="PackedScene" uid="uid://cdb38b288aor5" path="res://models/red_solo_cup_collision.glb" id="6_cup_collision"]
 [ext_resource type="Script" uid="uid://3cisy0phwqye" path="res://scripts/pong_physics_surface.gd" id="7_surface"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
@@ -196,8 +194,6 @@ ball_path = NodePath("../Grabbables/MatchPingPongBall")
 player_cup_parent_path = NodePath("../PlayerCupRack")
 computer_cup_parent_path = NodePath("../ComputerCupRack")
 status_label_path = NodePath("../StatusLabel")
-cup_visual_scene = ExtResource("5_cup_visual")
-cup_collision_scene = ExtResource("6_cup_collision")
 computer_throw_arc_height = 0.8
 
 [node name="OriginHelpers" type="Node3D" parent="." unique_id=808234199]
