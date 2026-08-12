@@ -1,10 +1,8 @@
 [gd_scene format=3 uid="uid://duhman8x40cay"]
 
 [ext_resource type="Script" path="res://scripts/editor/shot_tester/shot_tester_app.gd" id="1_app"]
-[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="2_cup_visual"]
 [ext_resource type="Script" uid="uid://3cisy0phwqye" path="res://scripts/pong_physics_surface.gd" id="3_surface"]
 [ext_resource type="Script" uid="uid://dnwkg054yesh8" path="res://scripts/throwable_ball.gd" id="4_ball"]
-[ext_resource type="Script" path="res://scripts/editor/shot_tester/shot_tester_rack.gd" id="5_rack"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_horizon_color = Color(0.42, 0.47, 0.5, 1)
@@ -76,7 +74,6 @@ ball_path = NodePath("SimulationBall")
 aim_indicator_path = NodePath("AimIndicator")
 camera_path = NodePath("Camera3D")
 ui_root_path = NodePath("TestingUi/Root")
-cup_visual_scene = ExtResource("2_cup_visual")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=342940188]
 environment = SubResource("Environment_1")
@@ -130,7 +127,6 @@ material_override = SubResource("StandardMaterial3D_RackMarker")
 mesh = SubResource("BoxMesh_RackMarker")
 
 [node name="CupRackRoot" type="Node3D" parent="." unique_id=1020106913]
-script = ExtResource("5_rack")
 
 [node name="SimulationBall" type="RigidBody3D" parent="." unique_id=1695420934 groups=["game_ball"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.18, -0.0484)
