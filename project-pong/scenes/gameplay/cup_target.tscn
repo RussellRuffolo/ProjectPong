@@ -1,0 +1,22 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cup_target.gd" id="1_cup"]
+[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="2_visual"]
+
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_Cup"]
+friction = 0.32
+bounce = 0.18
+
+[sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape_Cup"]
+points = PackedVector3Array(0.03, 0.006, 0, 0.021213, 0.006, 0.021213, 0, 0.006, 0.03, -0.021213, 0.006, 0.021213, -0.03, 0.006, 0, -0.021213, 0.006, -0.021213, 0, 0.006, -0.03, 0.021213, 0.006, -0.021213, 0.046, 0.058, 0, 0.032527, 0.058, 0.032527, 0, 0.058, 0.046, -0.032527, 0.058, 0.032527, -0.046, 0.058, 0, -0.032527, 0.058, -0.032527, 0, 0.058, -0.046, 0.032527, 0.058, -0.032527)
+
+[node name="CupTarget" type="StaticBody3D"]
+collision_layer = 1
+collision_mask = 1
+physics_material_override = SubResource("PhysicsMaterial_Cup")
+script = ExtResource("1_cup")
+
+[node name="Visual" parent="." instance=ExtResource("2_visual")]
+
+[node name="CupCollision" type="CollisionShape3D" parent="."]
+shape = SubResource("ConvexPolygonShape_Cup")

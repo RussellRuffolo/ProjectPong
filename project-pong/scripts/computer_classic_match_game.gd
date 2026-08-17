@@ -36,8 +36,6 @@ const SIDE_TWO_ID := &"computer_two"
 @export var shot_log_list_path: NodePath
 @export var log_export_status_label_path: NodePath
 @export var camera_path: NodePath
-@export var cup_visual_scene: PackedScene
-@export var cup_collision_scene: PackedScene
 @export var table_center_z := -1.56
 @export var table_length_meters := 2.7432
 @export var rack_end_margin := 0.14
@@ -50,11 +48,11 @@ const SIDE_TWO_ID := &"computer_two"
 @export var out_of_bounds_padding_z := 0.45
 @export var settled_speed := 0.08
 @export var settled_after_seconds := 1.25
-@export var scoring_settle_seconds := 0.35
 @export var max_attempt_seconds := 5.0
 @export var reset_delay := 0.15
 @export var scored_reset_delay := 0.25
 @export var cup_remove_delay := 0.10
+@export var captured_cup_remove_delay := 0.1
 @export var computer_throw_arc_height := 0.42
 @export var computer_aim_top_clearance := -0.10
 @export var autoplay_on_ready := true
@@ -566,8 +564,6 @@ func _build_starting_racks() -> void:
 	var side_one_back_row_z := table_center_z + half_length - rack_end_margin
 	var side_two_back_row_z := table_center_z - half_length + rack_end_margin
 	var side_one_cups := CupRackBuilderScript.build_triangular_rack(_side_one_cup_parent, {
-		"cup_visual_scene": cup_visual_scene,
-		"cup_collision_scene": cup_collision_scene,
 		"back_row_origin": Vector3(0.0, cup_height_y, side_one_back_row_z),
 		"row_direction_z": -1.0,
 		"cup_spacing": cup_spacing,
@@ -576,8 +572,6 @@ func _build_starting_racks() -> void:
 		"owner_side": SIDE_ONE_ID,
 	})
 	var side_two_cups := CupRackBuilderScript.build_triangular_rack(_side_two_cup_parent, {
-		"cup_visual_scene": cup_visual_scene,
-		"cup_collision_scene": cup_collision_scene,
 		"back_row_origin": Vector3(0.0, cup_height_y, side_two_back_row_z),
 		"row_direction_z": 1.0,
 		"cup_spacing": cup_spacing,
@@ -845,61 +839,24 @@ func _update_active_attempt(delta: float) -> void:
 	_contact_tracker.update(_attempt_elapsed)
 
 	var target_rack_state = _get_rack_state(_attempt_target_slot)
-	if _try_confirm_score(delta, target_rack_state):
-		return
-
-	if _try_confirm_planned_computer_score(target_rack_state):
+	if _try_confirm_score(target_rack_state):
 		return
 
 	if _is_miss(target_rack_state):
 		_resolve_physical_attempt(false, null)
 
 
-func _try_confirm_score(delta: float, target_rack_state) -> bool:
+func _try_confirm_score(target_rack_state) -> bool:
 	if target_rack_state == null:
 		return false
 
-	var resting_cup: Node3D = target_rack_state.find_resting_cup(_attempt_ball)
-	var confirmed_cup: Node3D = _score_tracker.update(
-		delta,
-		resting_cup,
-		_is_attempt_ball_settled(),
-		scoring_settle_seconds
-	)
+	var contact_candidate: Node3D = target_rack_state.find_score_contact_candidate(_attempt_ball)
+	var confirmed_cup: Node3D = _score_tracker.confirm_contact_candidate(contact_candidate)
 	if confirmed_cup == null:
 		return false
 
 	_resolve_physical_attempt(true, confirmed_cup)
 	return true
-
-
-func _try_confirm_planned_computer_score(target_rack_state) -> bool:
-	if target_rack_state == null or not _is_perfect_direct_throw_plan(_attempt_throw_plan):
-		return false
-
-	var target_cup_index := int(_attempt_throw_plan.get("target_cup_index", -1))
-	if target_cup_index < 0 or target_rack_state.is_scored(target_cup_index):
-		return false
-
-	var target_cup: Node3D = target_rack_state.get_cup(target_cup_index)
-	if target_cup == null or not is_instance_valid(target_cup):
-		return false
-
-	if _is_ball_aligned_with_plan_target(target_cup, _attempt_ball):
-		_resolve_physical_attempt(true, target_cup)
-		return true
-
-	var contact_summary = _contact_tracker.get_summary()
-	for event in contact_summary.contacts:
-		if str(event.get("type", "")) != "cup":
-			continue
-		if int(event.get("cup_index", -1)) != target_cup_index:
-			continue
-
-		_resolve_physical_attempt(true, target_cup)
-		return true
-
-	return false
 
 
 func _resolve_physical_attempt(was_score: bool, scored_cup: Node3D) -> Dictionary:
@@ -920,7 +877,9 @@ func _resolve_physical_attempt(was_score: bool, scored_cup: Node3D) -> Dictionar
 		0
 	)
 	var transition := _match_model.apply_shot_outcome(active_slot, target_slot, outcome)
-	_apply_removed_cup_indices(target_slot, transition.get("new_removed_cup_indices", []))
+	if bool(transition.get("resolved_score", false)) and _attempt_ball != null:
+		_attempt_ball.begin_score_capture(scored_cup)
+	_apply_removed_cup_indices(target_slot, transition.get("new_removed_cup_indices", []), scored_cup if valid_score else null)
 	_shots_simulated += 1
 	var removed_cup_indices := _read_int_array(transition.get("new_removed_cup_indices", []))
 	var scored_cup_index := _get_cup_index(scored_cup) if valid_score else -1
@@ -1109,24 +1068,7 @@ func _serialize_throw_plan(throw_plan: Dictionary) -> Dictionary:
 	}
 
 
-func _is_perfect_direct_throw_plan(throw_plan: Dictionary) -> bool:
-	return (
-		str(throw_plan.get("shot_type", "")) == "direct"
-		and throw_plan.get("aim_error", Vector3.ZERO).length_squared() <= 0.000001
-		and absf(float(throw_plan.get("angle_error_degrees", 0.0))) <= 0.0001
-	)
-
-
-func _is_ball_aligned_with_plan_target(cup: Node3D, ball: Node3D) -> bool:
-	if cup == null or ball == null or not is_instance_valid(cup) or not is_instance_valid(ball):
-		return false
-
-	var local_ball_position := cup.global_transform.affine_inverse() * ball.global_position
-	var horizontal_distance := Vector2(local_ball_position.x, local_ball_position.z).length()
-	return horizontal_distance <= 0.045 and local_ball_position.y <= 0.12 and local_ball_position.y >= -0.75
-
-
-func _apply_removed_cup_indices(slot: int, values: Variant) -> void:
+func _apply_removed_cup_indices(slot: int, values: Variant, physical_scoring_cup: Node3D = null) -> void:
 	var rack_state = _get_rack_state(slot)
 	if rack_state == null:
 		return
@@ -1137,7 +1079,10 @@ func _apply_removed_cup_indices(slot: int, values: Variant) -> void:
 
 		var cup: Node3D = rack_state.mark_scored(cup_index)
 		if cup != null and is_instance_valid(cup) and hide_removed_cups:
-			_pending_cup_removals.queue_scored_cup(cup, cup_remove_delay)
+			if cup == physical_scoring_cup:
+				_pending_cup_removals.queue_scored_cup(cup, captured_cup_remove_delay, _attempt_ball)
+			else:
+				_pending_cup_removals.queue_scored_cup(cup, cup_remove_delay)
 
 
 func _update_pending_cup_removals(delta: float) -> void:
@@ -1304,12 +1249,12 @@ func _is_valid_scored_cup(scored_cup: Node3D, target_rack_state, target_slot: in
 
 
 func _is_miss(target_rack_state) -> bool:
-	var resting_cup: Node3D = target_rack_state.find_resting_cup(_attempt_ball) if target_rack_state != null else null
+	var contact_candidate: Node3D = target_rack_state.find_score_contact_candidate(_attempt_ball) if target_rack_state != null else null
 	return ShotAttemptEvaluatorScript.is_miss(
 		_attempt_ball,
 		_attempt_elapsed,
 		_get_attempt_bounds(),
-		resting_cup,
+		contact_candidate,
 		_is_attempt_ball_settled()
 	)
 

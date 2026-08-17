@@ -61,13 +61,13 @@ Not implemented yet:
 - Practice mode is driven by `res://scripts/single_player_game.gd`. It owns local lifecycle, score display, ball reset, and fast single-rack practice flow while using shared helpers for rack creation, rack state, scoring confirmation, miss detection, ball-settle checks, cup removal, and baseline shot outcomes.
 - Classic Match is driven by `res://scripts/classic_match_game.gd`. It owns turns, two shots per turn, player/computer racks, computer throw execution, match end, and menu return while using shared helpers for rack construction/state, score confirmation, miss detection, delayed cup removal, and baseline shot outcomes.
 - Online Arena uses `res://scripts/network_match_state.gd` as the centralized networked match authority. It uses shared helpers for rack construction/state, score confirmation, miss detection, ball-settle checks, delayed cup removal, and baseline shot outcomes while publishing compact authoritative snapshots.
-- `res://scripts/cup_target.gd` owns per-cup score detection through `is_ball_resting_inside()`, exposes `cup_index` metadata in match modes, and marks/removes cups.
+- `res://scripts/cup_target.gd` classifies native top-cap contacts reported by `ThrowableBall`, exposes stable cup metadata in match modes, and marks/removes cups without changing match state directly.
 - `res://scripts/pong_physics_surface.gd` carries a `surface_id`, which should be used as the starting point for bounce/contact classification.
 - `res://scripts/match/pong_match_constants.gd` defines shared rack constants, settle tuning defaults, local side names, and network player slot constants.
 - `res://scripts/match/cup_rack_builder.gd` builds the standard triangular 10-cup rack, clears rack parents, names cups, and assigns stable `cup_index`, owner, row, and column metadata.
-- `res://scripts/match/rack_state.gd` tracks cups by stable index, available/scored state, remaining count, and resting-cup lookup.
+- `res://scripts/match/rack_state.gd` tracks cups by stable index, available/scored state, remaining count, and target-rack validation of native score-contact candidates.
 - `res://scripts/match/shot_physics.gd` owns the shared settled-ball check.
-- `res://scripts/match/shot_score_tracker.gd` owns score-candidate confirmation after the configured settle delay.
+- `res://scripts/match/shot_score_tracker.gd` owns immediate confirmation of a target-rack-validated native score-contact candidate.
 - `res://scripts/match/shot_attempt_evaluator.gd` owns shared miss/out-of-bounds/timeout detection through explicit per-mode bounds.
 - `res://scripts/match/cup_removal_queue.gd` owns delayed visual removal for local cup references and network slot/index lookups.
 - `res://scripts/match/computer_target_selector.gd` provides swappable computer target selection using `most_central` and `closest` heuristics. Classic Match exposes this via `computer_target_heuristic`; computer throw execution and accuracy offset remain in `classic_match_game.gd`.

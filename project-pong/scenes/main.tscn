@@ -1,11 +1,9 @@
-[gd_scene load_steps=29 format=3 uid="uid://bq1hqkibx0cax"]
+[gd_scene load_steps=27 format=3 uid="uid://bq1hqkibx0cax"]
 
 [ext_resource type="Script" path="res://scripts/xr_bootstrap.gd" id="1_xrboot"]
 [ext_resource type="Script" path="res://scripts/hand_grabber.gd" id="2_handgrab"]
 [ext_resource type="Script" path="res://scripts/throwable_ball.gd" id="3_ball"]
 [ext_resource type="Script" path="res://scripts/single_player_game.gd" id="4_game"]
-[ext_resource type="PackedScene" uid="uid://2df8gguo841w" path="res://models/red_solo_cup.glb" id="5_cup_visual"]
-[ext_resource type="PackedScene" path="res://models/red_solo_cup_collision.glb" id="6_cup_collision"]
 [ext_resource type="Script" path="res://scripts/pong_physics_surface.gd" id="7_surface"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
@@ -199,8 +197,6 @@ script = ExtResource("4_game")
 ball_path = NodePath("../Grabbables/TestPingPongBall")
 cup_parent_path = NodePath("../CupRack")
 score_label_path = NodePath("../ScoreLabel")
-cup_visual_scene = ExtResource("5_cup_visual")
-cup_collision_scene = ExtResource("6_cup_collision")
 
 [node name="OriginHelpers" type="Node3D" parent="."]
 

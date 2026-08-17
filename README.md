@@ -6,6 +6,16 @@ These instructions are for local development deployment to a Meta Quest headset.
 
 Source instructions were checked on August 11, 2026.
 
+## Native Cup Physics Overhaul Progress
+
+- [x] Audited the existing cup collision paths and identified the runtime math-volume system, synthetic cup contacts, math-only editor testers, and imported combined collision model as the legacy implementation to remove.
+- [x] Added `res://scenes/gameplay/cup_target.tscn`, a fixed `StaticBody3D` with one authored 16-point native convex shape and a shared physics material.
+- [x] Routed score detection through `PhysicsDirectBodyState3D` contact point/normal data, with deterministic candidate selection and contact-based score confirmation.
+- [x] Migrated Practice, Classic Match, Computer Classic Match, and Online Arena rack construction to the shared native cup scene.
+- [x] Removed the mathematical collider code, synthetic cup-contact path, score-by-planned-trajectory shortcuts, obsolete math-only collision/shot testers, and imported combined collision model.
+- [x] Passed `tools/validate_codex.cmd`, direct scene-load checks for Practice, Classic Match, Computer Classic Match, and Online Arena, the focused native contact/capture/removal test, and the CPU direct-zero scoring smoke (6/6 physical scores).
+- [ ] Tune edge fairness, clustered-cup bounce, and performance on Quest 2/Quest 3; repeat Online Arena validation on two headsets because local headless tests do not verify device physics or replicated presentation timing.
+
 ## Target Environment
 
 Use these versions unless the project maintainers intentionally upgrade the repo:

@@ -6,7 +6,7 @@ static func is_miss(
 	ball: RigidBody3D,
 	attempt_elapsed: float,
 	config: Dictionary,
-	resting_cup: Node3D,
+	score_contact_candidate: Node3D,
 	ball_is_settled: bool
 ) -> bool:
 	if ball == null or not is_instance_valid(ball):
@@ -26,7 +26,7 @@ static func is_miss(
 	if (
 		attempt_elapsed >= float(config.get("settled_after_seconds", INF))
 		and ball_is_settled
-		and resting_cup == null
+		and score_contact_candidate == null
 	):
 		return true
 
